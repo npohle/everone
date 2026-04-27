@@ -1,0 +1,361 @@
+import { config, isConfigured } from "./config.js";
+import * as auth from "./auth.js";
+import * as graph from "./graph.js";
+import * as viewer from "./viewer.js";
+
+const els = {
+  signedOut: document.getElementById("signed-out"),
+  configHint: document.getElementById("config-hint"),
+  signinCta: document.getElementById("signin-cta"),
+  authBtn: document.getElementById("auth-btn"),
+  user: document.getElementById("user"),
+  browser: document.getElementById("browser"),
+  listing: document.getElementById("listing"),
+  loading: document.getElementById("loading"),
+  loadMore: document.getElementById("load-more"),
+  status: document.getElementById("status"),
+  upBtn: document.getElementById("up-btn"),
+  sort: document.getElementById("sort"),
+  search: document.getElementById("search"),
+  breadcrumbs: document.getElementById("breadcrumbs"),
+  toast: document.getElementById("toast"),
+};
+
+const state = {
+  // Stack of folder items the user navigated through. The last entry is current.
+  stack: [],
+  // Current page of items being displayed.
+  items: [],
+  nextLink: null,
+  sort: "name-asc",
+  searchQuery: "",
+  // Monotonic id; pending requests with stale ids are discarded.
+  loadId: 0,
+};
+
+function showToast(msg) {
+  els.toast.textContent = msg;
+  els.toast.hidden = false;
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => { els.toast.hidden = true; }, 4000);
+}
+
+function formatBytes(n) {
+  if (n == null) return "";
+  if (n === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+}
+
+function formatDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const now = new Date();
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: sameYear ? undefined : "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+const FOLDER_ICON = "📁";
+function fileIcon(item) {
+  if (item.folder) return FOLDER_ICON;
+  const name = item.name.toLowerCase();
+  const ext = name.includes(".") ? name.split(".").pop() : "";
+  if (["png","jpg","jpeg","gif","webp","bmp","svg","avif"].includes(ext)) return "🖼️";
+  if (["mp4","webm","ogv","mov","m4v","avi","mkv"].includes(ext)) return "🎬";
+  if (["mp3","wav","ogg","m4a","flac","aac"].includes(ext)) return "🎵";
+  if (ext === "pdf") return "📕";
+  if (["doc","docx","odt","rtf"].includes(ext)) return "📝";
+  if (["xls","xlsx","csv","ods"].includes(ext)) return "📊";
+  if (["ppt","pptx","odp"].includes(ext)) return "📽️";
+  if (["zip","rar","7z","tar","gz","bz2","xz"].includes(ext)) return "🗜️";
+  if (["js","ts","py","rb","go","rs","java","c","cpp","cs","html","css","json","xml","sh"].includes(ext)) return "📜";
+  if (["md","markdown","txt","log"].includes(ext)) return "📄";
+  return "📄";
+}
+
+function sortItems(items, mode) {
+  const cmp = {
+    "name-asc": (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
+    "name-desc": (a, b) => b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: "base" }),
+    "modified-desc": (a, b) => (b.lastModifiedDateTime || "").localeCompare(a.lastModifiedDateTime || ""),
+    "modified-asc": (a, b) => (a.lastModifiedDateTime || "").localeCompare(b.lastModifiedDateTime || ""),
+    "size-desc": (a, b) => (b.size || 0) - (a.size || 0),
+    "size-asc": (a, b) => (a.size || 0) - (b.size || 0),
+  }[mode];
+  // Folders always above files.
+  return [...items].sort((a, b) => {
+    const af = !!a.folder, bf = !!b.folder;
+    if (af !== bf) return af ? -1 : 1;
+    return cmp(a, b);
+  });
+}
+
+function renderListing() {
+  els.listing.replaceChildren();
+  const sorted = sortItems(state.items, state.sort);
+
+  if (sorted.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    empty.textContent = state.searchQuery ? "No matching files." : "This folder is empty.";
+    els.listing.appendChild(empty);
+    return;
+  }
+
+  const head = document.createElement("li");
+  head.className = "row head";
+  head.innerHTML = `<span></span><span>Name</span><span>Modified</span><span>Size</span>`;
+  els.listing.appendChild(head);
+
+  for (const item of sorted) {
+    const li = document.createElement("li");
+    li.className = "row";
+    li.dataset.id = item.id;
+    li.innerHTML = `
+      <span class="icon">${fileIcon(item)}</span>
+      <span class="name"></span>
+      <span class="meta-modified">${formatDate(item.lastModifiedDateTime)}</span>
+      <span class="meta-size">${item.folder ? `${item.folder.childCount ?? ""}` : formatBytes(item.size)}</span>
+    `;
+    li.querySelector(".name").textContent = item.name;
+    li.addEventListener("click", () => onItemClick(item));
+    li.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onItemClick(item); }
+    });
+    li.tabIndex = 0;
+    els.listing.appendChild(li);
+  }
+}
+
+function renderBreadcrumbs() {
+  els.breadcrumbs.replaceChildren();
+  const crumbs = [{ id: null, name: "OneDrive" }, ...state.stack];
+  crumbs.forEach((c, i) => {
+    if (i > 0) {
+      const sep = document.createElement("span");
+      sep.className = "sep";
+      sep.textContent = "›";
+      els.breadcrumbs.appendChild(sep);
+    }
+    if (i === crumbs.length - 1) {
+      const span = document.createElement("span");
+      span.textContent = c.name;
+      els.breadcrumbs.appendChild(span);
+    } else {
+      const link = document.createElement("a");
+      link.className = "crumb";
+      link.textContent = c.name;
+      link.href = "#";
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        navigateToDepth(i);
+      });
+      els.breadcrumbs.appendChild(link);
+    }
+  });
+}
+
+function setStatus(text) {
+  els.status.textContent = text;
+}
+
+function onItemClick(item) {
+  if (item.folder) {
+    state.stack.push({ id: item.id, name: item.name });
+    loadCurrent();
+  } else {
+    viewer.open(item);
+  }
+}
+
+function navigateToDepth(depth) {
+  // depth 0 = root; trim stack so its length equals depth.
+  state.stack = state.stack.slice(0, depth);
+  loadCurrent();
+}
+
+async function loadCurrent() {
+  state.searchQuery = "";
+  els.search.value = "";
+  const id = ++state.loadId;
+  els.loading.hidden = false;
+  els.loadMore.hidden = true;
+  setStatus("");
+  renderBreadcrumbs();
+
+  try {
+    const folder = state.stack[state.stack.length - 1];
+    const page = await graph.listChildren(folder ? folder.id : null);
+    if (id !== state.loadId) return;
+    state.items = page.value || [];
+    state.nextLink = page["@odata.nextLink"] || null;
+    renderListing();
+    els.loadMore.hidden = !state.nextLink;
+    setStatus(`${state.items.length} item${state.items.length === 1 ? "" : "s"}${state.nextLink ? "+" : ""}`);
+  } catch (err) {
+    if (id !== state.loadId) return;
+    showToast(err.message || "Failed to load folder");
+    state.items = [];
+    state.nextLink = null;
+    renderListing();
+  } finally {
+    if (id === state.loadId) els.loading.hidden = true;
+  }
+}
+
+async function loadMore() {
+  if (!state.nextLink) return;
+  const id = state.loadId;
+  els.loadMore.disabled = true;
+  try {
+    const page = await graph.listNextPage(state.nextLink);
+    if (id !== state.loadId) return;
+    state.items = state.items.concat(page.value || []);
+    state.nextLink = page["@odata.nextLink"] || null;
+    renderListing();
+    els.loadMore.hidden = !state.nextLink;
+    setStatus(`${state.items.length} item${state.items.length === 1 ? "" : "s"}${state.nextLink ? "+" : ""}`);
+  } catch (err) {
+    showToast(err.message || "Failed to load more");
+  } finally {
+    els.loadMore.disabled = false;
+  }
+}
+
+async function runSearch(query) {
+  const id = ++state.loadId;
+  state.searchQuery = query;
+  els.loading.hidden = false;
+  els.loadMore.hidden = true;
+  setStatus("");
+  // Clear breadcrumbs visually to a search view.
+  els.breadcrumbs.replaceChildren(Object.assign(document.createElement("span"), {
+    textContent: `Search: “${query}”`,
+  }));
+
+  try {
+    const page = await graph.search(query);
+    if (id !== state.loadId) return;
+    state.items = page.value || [];
+    state.nextLink = page["@odata.nextLink"] || null;
+    renderListing();
+    els.loadMore.hidden = !state.nextLink;
+    setStatus(`${state.items.length} match${state.items.length === 1 ? "" : "es"}${state.nextLink ? "+" : ""}`);
+  } catch (err) {
+    if (id !== state.loadId) return;
+    showToast(err.message || "Search failed");
+  } finally {
+    if (id === state.loadId) els.loading.hidden = true;
+  }
+}
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
+async function showSignedIn(account) {
+  els.signedOut.hidden = true;
+  els.browser.hidden = false;
+  els.user.hidden = false;
+  els.user.textContent = account.username || account.name || "";
+  els.authBtn.textContent = "Sign out";
+  state.stack = [];
+  await loadCurrent();
+}
+
+function showSignedOut() {
+  els.signedOut.hidden = false;
+  els.browser.hidden = true;
+  els.user.hidden = true;
+  els.user.textContent = "";
+  els.authBtn.textContent = "Sign in";
+}
+
+async function handleSignIn() {
+  if (!isConfigured()) {
+    els.configHint.hidden = false;
+    showToast("Set your Azure clientId in config.js");
+    return;
+  }
+  try {
+    const account = await auth.signIn();
+    if (account) await showSignedIn(account);
+  } catch (err) {
+    showToast(err.message || "Sign-in failed");
+  }
+}
+
+async function handleSignOut() {
+  try {
+    await auth.signOut();
+  } catch (err) {
+    showToast(err.message || "Sign-out failed");
+  } finally {
+    showSignedOut();
+  }
+}
+
+function wireEvents() {
+  els.signinCta.addEventListener("click", handleSignIn);
+  els.authBtn.addEventListener("click", () => {
+    if (auth.getAccount()) handleSignOut();
+    else handleSignIn();
+  });
+  els.upBtn.addEventListener("click", () => {
+    if (state.stack.length === 0) return;
+    state.stack.pop();
+    loadCurrent();
+  });
+  els.sort.addEventListener("change", (e) => {
+    state.sort = e.target.value;
+    renderListing();
+  });
+  els.loadMore.addEventListener("click", loadMore);
+  els.search.addEventListener("input", debounce((e) => {
+    const q = e.target.value.trim();
+    if (q.length === 0) {
+      loadCurrent();
+    } else if (q.length >= 2) {
+      runSearch(q);
+    }
+  }, 300));
+}
+
+async function start() {
+  wireEvents();
+  if (!isConfigured()) {
+    els.configHint.hidden = false;
+    return;
+  }
+  try {
+    await auth.init();
+  } catch (err) {
+    showToast(err.message || "Auth init failed");
+    return;
+  }
+  const account = auth.getAccount();
+  if (account) {
+    try {
+      await showSignedIn(account);
+    } catch (err) {
+      showToast(err.message || "Failed to load OneDrive");
+    }
+  } else {
+    showSignedOut();
+  }
+}
+
+start();

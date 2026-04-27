@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OneDrive Browser</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📁</text></svg>" />
+  <script src="https://alcdn.msauth.net/browser/3.20.0/js/msal-browser.min.js"
+          crossorigin="anonymous"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">☁</span>
+      <span>OneDrive Browser</span>
+    </div>
+    <nav id="breadcrumbs" class="breadcrumbs" aria-label="Breadcrumbs"></nav>
+    <div class="topbar-actions">
+      <input id="search" type="search" placeholder="Search OneDrive…" autocomplete="off" />
+      <span id="user" class="user" hidden></span>
+      <button id="auth-btn" type="button">Sign in</button>
+    </div>
+  </header>
+
+  <main id="main" class="main">
+    <section id="signed-out" class="signed-out">
+      <h1>Sign in to browse your OneDrive</h1>
+      <p>This is a static, client-only viewer. Your files never pass through any server other than Microsoft Graph.</p>
+      <button id="signin-cta" type="button" class="primary">Sign in with Microsoft</button>
+      <p class="hint" id="config-hint" hidden>
+        First-time setup: edit <code>config.js</code> and set your Azure App Registration <code>clientId</code>.
+      </p>
+    </section>
+
+    <section id="browser" class="browser" hidden>
+      <div class="toolbar">
+        <button id="up-btn" type="button" title="Up one level">↑ Up</button>
+        <select id="sort">
+          <option value="name-asc">Name (A→Z)</option>
+          <option value="name-desc">Name (Z→A)</option>
+          <option value="modified-desc">Modified (newest)</option>
+          <option value="modified-asc">Modified (oldest)</option>
+          <option value="size-desc">Size (largest)</option>
+          <option value="size-asc">Size (smallest)</option>
+        </select>
+        <span id="status" class="status"></span>
+      </div>
+      <ul id="listing" class="listing" role="list"></ul>
+      <div id="loading" class="loading" hidden>Loading…</div>
+      <button id="load-more" class="load-more" type="button" hidden>Load more</button>
+    </section>
+  </main>
+
+  <div id="viewer" class="viewer" hidden aria-hidden="true">
+    <div class="viewer-bar">
+      <span id="viewer-title" class="viewer-title"></span>
+      <div class="viewer-actions">
+        <a id="viewer-download" href="#" download>Download</a>
+        <a id="viewer-open" href="#" target="_blank" rel="noopener">Open in OneDrive</a>
+        <button id="viewer-close" type="button" aria-label="Close viewer">✕</button>
+      </div>
+    </div>
+    <div id="viewer-body" class="viewer-body"></div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
