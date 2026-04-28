@@ -155,12 +155,9 @@ async function renderEmbed(item) {
 }
 
 async function renderPdf(item) {
-  // Browsers render PDFs natively from a blob URL — no Graph embed roundtrip.
-  const blob = await graph.fetchContent(item);
-  activeBlobUrl = URL.createObjectURL(blob);
-  const iframe = document.createElement("iframe");
-  iframe.src = activeBlobUrl;
-  setBody(iframe);
+  // Chrome blocks blob: URLs from loading in an <iframe> as PDFs, so route
+  // through the Graph preview embed (same path used for Office docs).
+  await renderEmbed(item);
 }
 
 export async function open(item) {
