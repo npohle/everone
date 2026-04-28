@@ -17,7 +17,7 @@
 // The `authority` value below works for both work/school and personal accounts.
 
 export const config = {
-  clientId: "REPLACE_WITH_YOUR_CLIENT_ID",
+  clientId: "95e0df7d-45cf-4b50-a726-d9a57993db01",
   authority: "https://login.microsoftonline.com/common",
   scopes: ["User.Read", "Files.Read", "Files.Read.All"],
   graphBase: "https://graph.microsoft.com/v1.0",
