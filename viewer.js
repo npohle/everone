@@ -27,10 +27,12 @@ const els = {
   title: document.getElementById("viewer-title"),
   download: document.getElementById("viewer-download"),
   open: document.getElementById("viewer-open"),
-  close: document.getElementById("viewer-close"),
 };
 
 let activeBlobUrl = null;
+// Monotonic id; pending renders with stale ids are discarded so a slow load
+// doesn't clobber a faster subsequent selection.
+let loadId = 0;
 
 function extOf(name) {
   const i = name.lastIndexOf(".");
@@ -50,6 +52,13 @@ function setBody(node) {
   els.body.appendChild(node);
 }
 
+// Skips the DOM update if a newer render has been requested in the meantime.
+function setBodyIfCurrent(id, node) {
+  if (id !== loadId) return false;
+  setBody(node);
+  return true;
+}
+
 function unsupported(item) {
   const div = document.createElement("div");
   div.className = "unsupported";
@@ -61,34 +70,39 @@ function unsupported(item) {
   return div;
 }
 
-async function renderImage(item) {
+async function renderImage(item, id) {
   const blob = await graph.fetchContent(item);
-  activeBlobUrl = URL.createObjectURL(blob);
+  if (id !== loadId) return;
+  const url = URL.createObjectURL(blob);
   const img = document.createElement("img");
-  img.src = activeBlobUrl;
+  img.src = url;
   img.alt = item.name;
-  setBody(img);
+  if (setBodyIfCurrent(id, img)) activeBlobUrl = url;
+  else URL.revokeObjectURL(url);
 }
 
-async function renderMedia(item, tag) {
+async function renderMedia(item, tag, id) {
   const blob = await graph.fetchContent(item);
-  activeBlobUrl = URL.createObjectURL(blob);
+  if (id !== loadId) return;
+  const url = URL.createObjectURL(blob);
   const el = document.createElement(tag);
-  el.src = activeBlobUrl;
+  el.src = url;
   el.controls = true;
   el.autoplay = false;
-  setBody(el);
+  if (setBodyIfCurrent(id, el)) activeBlobUrl = url;
+  else URL.revokeObjectURL(url);
 }
 
-async function renderText(item) {
+async function renderText(item, id) {
   if (item.size && item.size > MAX_TEXT_BYTES) {
-    setBody(unsupportedSize(item));
+    setBodyIfCurrent(id, unsupportedSize(item));
     return;
   }
   const text = await graph.fetchContent(item, { asText: true });
+  if (id !== loadId) return;
   const pre = document.createElement("pre");
   pre.textContent = text;
-  setBody(pre);
+  setBodyIfCurrent(id, pre);
 }
 
 function unsupportedSize(item) {
@@ -111,12 +125,13 @@ function formatBytes(n) {
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
 }
 
-async function renderMarkdown(item) {
+async function renderMarkdown(item, id) {
   if (item.size && item.size > MAX_TEXT_BYTES) {
-    setBody(unsupportedSize(item));
+    setBodyIfCurrent(id, unsupportedSize(item));
     return;
   }
   const text = await graph.fetchContent(item, { asText: true });
+  if (id !== loadId) return;
   const wrap = document.createElement("article");
   wrap.className = "markdown";
   // Render via the marked CDN if available, otherwise fall back to <pre>.
@@ -127,7 +142,7 @@ async function renderMarkdown(item) {
     pre.textContent = text;
     wrap.appendChild(pre);
   }
-  setBody(wrap);
+  setBodyIfCurrent(id, wrap);
 }
 
 async function ensureMarked() {
@@ -141,32 +156,34 @@ async function ensureMarked() {
   });
 }
 
-async function renderEmbed(item) {
+async function renderEmbed(item, id) {
   const url = await graph.getEmbedUrl(item.id);
+  if (id !== loadId) return;
   if (!url) {
-    setBody(unsupported(item));
+    setBodyIfCurrent(id, unsupported(item));
     return;
   }
   const iframe = document.createElement("iframe");
   iframe.src = url;
   iframe.allowFullscreen = true;
   iframe.referrerPolicy = "no-referrer";
-  setBody(iframe);
+  setBodyIfCurrent(id, iframe);
 }
 
-async function renderPdf(item) {
+async function renderPdf(item, id) {
   // Chrome blocks blob: URLs from loading in an <iframe> as PDFs, so route
   // through the Graph preview embed (same path used for Office docs).
-  await renderEmbed(item);
+  await renderEmbed(item, id);
 }
 
 export async function open(item) {
+  const id = ++loadId;
   els.title.textContent = item.name;
   els.download.href = item["@microsoft.graph.downloadUrl"] || "#";
   els.download.setAttribute("download", item.name);
+  els.download.hidden = !item["@microsoft.graph.downloadUrl"];
   els.open.href = item.webUrl || "#";
-  els.root.hidden = false;
-  els.root.setAttribute("aria-hidden", "false");
+  els.open.hidden = !item.webUrl;
 
   const loading = document.createElement("div");
   loading.className = "unsupported";
@@ -176,26 +193,27 @@ export async function open(item) {
   try {
     const ext = extOf(item.name);
     if (IMAGE_EXT.has(ext)) {
-      await renderImage(item);
+      await renderImage(item, id);
     } else if (VIDEO_EXT.has(ext)) {
-      await renderMedia(item, "video");
+      await renderMedia(item, "video", id);
     } else if (AUDIO_EXT.has(ext)) {
-      await renderMedia(item, "audio");
+      await renderMedia(item, "audio", id);
     } else if (PDF_EXT.has(ext)) {
-      await renderPdf(item);
+      await renderPdf(item, id);
     } else if (MARKDOWN_EXT.has(ext)) {
       try { await ensureMarked(); } catch {}
-      await renderMarkdown(item);
+      await renderMarkdown(item, id);
     } else if (TEXT_EXT.has(ext)) {
-      await renderText(item);
+      await renderText(item, id);
     } else if (OFFICE_EXT.has(ext)) {
-      await renderEmbed(item);
+      await renderEmbed(item, id);
     } else if (item.file && item.file.mimeType && item.file.mimeType.startsWith("text/")) {
-      await renderText(item);
+      await renderText(item, id);
     } else {
-      setBody(unsupported(item));
+      setBodyIfCurrent(id, unsupported(item));
     }
   } catch (err) {
+    if (id !== loadId) return;
     const div = document.createElement("div");
     div.className = "unsupported";
     div.innerHTML = `<h2>Preview failed</h2><p>${(err && err.message) || "Unknown error"}</p>`;
@@ -203,16 +221,13 @@ export async function open(item) {
   }
 }
 
-export function close() {
-  els.root.hidden = true;
-  els.root.setAttribute("aria-hidden", "true");
-  clearBody();
+export function clear() {
+  loadId++;
+  els.title.textContent = "Preview";
+  els.download.hidden = true;
+  els.open.hidden = true;
+  const placeholder = document.createElement("div");
+  placeholder.className = "placeholder";
+  placeholder.textContent = "Select a file from the list to preview it here.";
+  setBody(placeholder);
 }
-
-els.close.addEventListener("click", close);
-els.root.addEventListener("click", (e) => {
-  if (e.target === els.root) close();
-});
-document.addEventListener("keydown", (e) => {
-  if (!els.root.hidden && e.key === "Escape") close();
-});

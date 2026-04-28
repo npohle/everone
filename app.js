@@ -31,6 +31,8 @@ const state = {
   searchQuery: "",
   // Monotonic id; pending requests with stale ids are discarded.
   loadId: 0,
+  // Currently selected file id (the one being previewed).
+  selectedId: null,
 };
 
 function showToast(msg) {
@@ -118,7 +120,7 @@ function renderListing() {
 
   for (const item of sorted) {
     const li = document.createElement("li");
-    li.className = "row";
+    li.className = "row" + (item.id === state.selectedId ? " selected" : "");
     li.dataset.id = item.id;
     li.innerHTML = `
       <span class="icon">${fileIcon(item)}</span>
@@ -173,8 +175,18 @@ function onItemClick(item) {
     state.stack.push({ id: item.id, name: item.name });
     loadCurrent();
   } else {
-    viewer.open(item);
+    selectItem(item);
   }
+}
+
+function selectItem(item) {
+  if (state.selectedId === item.id) return;
+  const prev = els.listing.querySelector(".row.selected");
+  if (prev) prev.classList.remove("selected");
+  const next = els.listing.querySelector(`.row[data-id="${CSS.escape(item.id)}"]`);
+  if (next) next.classList.add("selected");
+  state.selectedId = item.id;
+  viewer.open(item);
 }
 
 function navigateToDepth(depth) {
@@ -186,6 +198,8 @@ function navigateToDepth(depth) {
 async function loadCurrent() {
   state.searchQuery = "";
   els.search.value = "";
+  state.selectedId = null;
+  viewer.clear();
   const id = ++state.loadId;
   els.loading.hidden = false;
   els.loadMore.hidden = true;
@@ -234,6 +248,8 @@ async function loadMore() {
 async function runSearch(query) {
   const id = ++state.loadId;
   state.searchQuery = query;
+  state.selectedId = null;
+  viewer.clear();
   els.loading.hidden = false;
   els.loadMore.hidden = true;
   setStatus("");
