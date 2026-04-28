@@ -18,7 +18,7 @@
 
 export const config = {
   clientId: "95e0df7d-45cf-4b50-a726-d9a57993db01",
-  authority: "https://login.microsoftonline.com/common",
+  authority: "https://login.microsoftonline.com/consumers",
   scopes: ["User.Read", "Files.Read", "Files.Read.All"],
   graphBase: "https://graph.microsoft.com/v1.0",
   pageSize: 100,
