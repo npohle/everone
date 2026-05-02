@@ -380,7 +380,30 @@ function wireEvents() {
       runSearch(q);
     }
   }, 300));
+  initListingKeyboard();
   initSplitDivider();
+}
+
+function initListingKeyboard() {
+  els.listing.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    const rows = Array.from(els.listing.querySelectorAll(".row:not(.head)"));
+    if (rows.length === 0) return;
+    e.preventDefault();
+    const current = rows.indexOf(document.activeElement);
+    let next;
+    if (current === -1) {
+      next = rows.findIndex((r) => r.classList.contains("selected"));
+      if (next === -1) next = 0;
+    } else {
+      next = current + (e.key === "ArrowDown" ? 1 : -1);
+      next = Math.max(0, Math.min(rows.length - 1, next));
+    }
+    const row = rows[next];
+    row.focus();
+    const item = state.items.find((it) => it.id === row.dataset.id);
+    if (item && !item.folder) selectItem(item);
+  });
 }
 
 function initSplitDivider() {
