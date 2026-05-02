@@ -147,7 +147,7 @@ function renderListing() {
 
   const head = document.createElement("li");
   head.className = "row head";
-  head.innerHTML = `<span></span><span>Name</span><span>Reference</span><span>Size</span>`;
+  head.innerHTML = `<span></span><span>Name</span><span>Reference</span>`;
   els.listing.appendChild(head);
 
   for (const item of sorted) {
@@ -158,7 +158,6 @@ function renderListing() {
       <span class="icon">${fileIcon(item)}</span>
       <span class="name"></span>
       <span class="meta-ref">${parseReferenceDate(item.name) ?? ""}</span>
-      <span class="meta-size">${item.folder ? `${item.folder.childCount ?? ""}` : formatBytes(item.size)}</span>
     `;
     li.querySelector(".name").textContent = displayName(item.name);
     li.addEventListener("click", () => onItemClick(item));

@@ -180,7 +180,7 @@ a:hover { text-decoration: underline; }
 
 .row {
   display: grid;
-  grid-template-columns: 32px 1fr 100px 90px;
+  grid-template-columns: 32px 1fr 100px;
   gap: 12px;
   align-items: center;
   padding: 10px 14px;
@@ -213,17 +213,15 @@ a:hover { text-decoration: underline; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.row .meta-ref, .row .meta-size {
+.row .meta-ref {
   color: var(--muted);
   font-size: 13px;
   white-space: nowrap;
-}
-.row .meta-ref {
   font-variant-numeric: tabular-nums;
 }
 
 @media (max-width: 640px) {
-  .row { grid-template-columns: 28px 1fr 80px; }
+  .row { grid-template-columns: 28px 1fr; }
   .row .meta-ref { display: none; }
   input[type="search"] { width: 140px; }
   .breadcrumbs { display: none; }
