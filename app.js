@@ -27,7 +27,7 @@ const state = {
   // Current page of items being displayed.
   items: [],
   nextLink: null,
-  sort: "name-asc",
+  sort: "name-desc",
   searchQuery: "",
   // Monotonic id; pending requests with stale ids are discarded.
   loadId: 0,
@@ -116,26 +116,11 @@ function fileIcon(item) {
   return "📄";
 }
 
-function sortItems(items, mode) {
-  const cmp = {
-    "name-asc": (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
-    "name-desc": (a, b) => b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: "base" }),
-    "modified-desc": (a, b) => (b.lastModifiedDateTime || "").localeCompare(a.lastModifiedDateTime || ""),
-    "modified-asc": (a, b) => (a.lastModifiedDateTime || "").localeCompare(b.lastModifiedDateTime || ""),
-    "size-desc": (a, b) => (b.size || 0) - (a.size || 0),
-    "size-asc": (a, b) => (a.size || 0) - (b.size || 0),
-  }[mode];
-  // Folders always above files.
-  return [...items].sort((a, b) => {
-    const af = !!a.folder, bf = !!b.folder;
-    if (af !== bf) return af ? -1 : 1;
-    return cmp(a, b);
-  });
-}
-
 function renderListing() {
   els.listing.replaceChildren();
-  const sorted = sortItems(state.items, state.sort);
+  // Items arrive pre-sorted from Graph via $orderby; preserve that order so
+  // pagination is stable as more pages stream in.
+  const sorted = state.items;
 
   if (sorted.length === 0) {
     const empty = document.createElement("li");
@@ -239,7 +224,7 @@ async function loadCurrent() {
 
   try {
     const folder = state.stack[state.stack.length - 1];
-    const page = await graph.listChildren(folder ? folder.id : null);
+    const page = await graph.listChildren(folder ? folder.id : null, state.sort);
     if (id !== state.loadId) return;
     state.items = page.value || [];
     state.nextLink = page["@odata.nextLink"] || null;
@@ -290,7 +275,7 @@ async function runSearch(query) {
   }));
 
   try {
-    const page = await graph.search(query);
+    const page = await graph.search(query, state.sort);
     if (id !== state.loadId) return;
     state.items = page.value || [];
     state.nextLink = page["@odata.nextLink"] || null;
@@ -368,7 +353,10 @@ function wireEvents() {
   });
   els.sort.addEventListener("change", (e) => {
     state.sort = e.target.value;
-    renderListing();
+    // Re-fetch so the new $orderby is applied to the first page and propagates
+    // through the @odata.nextLink for subsequent pages.
+    if (state.searchQuery) runSearch(state.searchQuery);
+    else loadCurrent();
   });
   els.loadMore.addEventListener("click", loadMore);
   els.search.addEventListener("input", debounce((e) => {

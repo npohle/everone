@@ -30,11 +30,27 @@ export async function getMe() {
 
 const SELECT = "id,name,size,folder,file,parentReference,lastModifiedDateTime,webUrl,@microsoft.graph.downloadUrl";
 
-export async function listChildren(itemId) {
+// Maps the UI sort key to a Graph $orderby clause. Graph supports orderby on
+// driveItem children for personal OneDrive (name, lastModifiedDateTime, size).
+const ORDER_BY = {
+  "name-asc": "name asc",
+  "name-desc": "name desc",
+  "modified-asc": "lastModifiedDateTime asc",
+  "modified-desc": "lastModifiedDateTime desc",
+  "size-asc": "size asc",
+  "size-desc": "size desc",
+};
+
+function orderByParam(sort) {
+  const clause = ORDER_BY[sort];
+  return clause ? `&$orderby=${encodeURIComponent(clause)}` : "";
+}
+
+export async function listChildren(itemId, sort) {
   const path = itemId
     ? `/me/drive/items/${encodeURIComponent(itemId)}/children`
     : `/me/drive/root/children`;
-  const url = `${config.graphBase}${path}?$top=${config.pageSize}&$select=${SELECT}`;
+  const url = `${config.graphBase}${path}?$top=${config.pageSize}&$select=${SELECT}${orderByParam(sort)}`;
   return graphJson(url);
 }
 
@@ -52,9 +68,9 @@ export async function getRoot() {
   return graphJson(url);
 }
 
-export async function search(query) {
+export async function search(query, sort) {
   const q = encodeURIComponent(query);
-  const url = `${config.graphBase}/me/drive/root/search(q='${q}')?$top=${config.pageSize}&$select=${SELECT}`;
+  const url = `${config.graphBase}/me/drive/root/search(q='${q}')?$top=${config.pageSize}&$select=${SELECT}${orderByParam(sort)}`;
   return graphJson(url);
 }
 
