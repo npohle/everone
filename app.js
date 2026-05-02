@@ -66,6 +66,22 @@ function formatDate(iso) {
   });
 }
 
+// Extracts a YYYY-MM-DD prefix from a filename and returns it as a string,
+// or null if the prefix is missing or doesn't represent a valid calendar date.
+function parseReferenceDate(name) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(name);
+  if (!m) return null;
+  const [, y, mo, d] = m;
+  const year = +y, month = +mo, day = +d;
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  if (
+    dt.getUTCFullYear() !== year ||
+    dt.getUTCMonth() !== month - 1 ||
+    dt.getUTCDate() !== day
+  ) return null;
+  return `${y}-${mo}-${d}`;
+}
+
 const FOLDER_ICON = "📁";
 function fileIcon(item) {
   if (item.folder) return FOLDER_ICON;
@@ -115,7 +131,7 @@ function renderListing() {
 
   const head = document.createElement("li");
   head.className = "row head";
-  head.innerHTML = `<span></span><span>Name</span><span>Modified</span><span>Size</span>`;
+  head.innerHTML = `<span></span><span>Name</span><span>Reference</span><span>Modified</span><span>Size</span>`;
   els.listing.appendChild(head);
 
   for (const item of sorted) {
@@ -125,6 +141,7 @@ function renderListing() {
     li.innerHTML = `
       <span class="icon">${fileIcon(item)}</span>
       <span class="name"></span>
+      <span class="meta-ref">${parseReferenceDate(item.name) ?? ""}</span>
       <span class="meta-modified">${formatDate(item.lastModifiedDateTime)}</span>
       <span class="meta-size">${item.folder ? `${item.folder.childCount ?? ""}` : formatBytes(item.size)}</span>
     `;
