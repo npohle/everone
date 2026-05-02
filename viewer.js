@@ -34,6 +34,35 @@ let activeBlobUrl = null;
 // doesn't clobber a faster subsequent selection.
 let loadId = 0;
 
+// Focus-steal guard: the embedded Office/PDF preview iframe focuses itself on
+// load, which yanks focus out of the file list mid-navigation. We record the
+// element that was focused when the preview opened and, if focus drifts into
+// the preview pane without an explicit user gesture (pointer down or Tab key),
+// route it back. The guard releases as soon as the user explicitly takes focus
+// in the preview.
+let savedFocus = null;
+let userTookPreviewFocus = false;
+let tabPressed = false;
+
+document.addEventListener("keydown", (e) => {
+  // Track Tab so a Tab-into-preview is recognized as user-initiated.
+  tabPressed = e.key === "Tab";
+}, true);
+
+els.root.addEventListener("pointerdown", () => {
+  userTookPreviewFocus = true;
+});
+
+els.root.addEventListener("focusin", () => {
+  if (userTookPreviewFocus || tabPressed) {
+    userTookPreviewFocus = true;
+    return;
+  }
+  if (savedFocus && document.contains(savedFocus) && !els.root.contains(savedFocus)) {
+    savedFocus.focus();
+  }
+});
+
 function extOf(name) {
   const i = name.lastIndexOf(".");
   return i >= 0 ? name.slice(i + 1).toLowerCase() : "";
@@ -178,6 +207,16 @@ async function renderPdf(item, id) {
 
 export async function open(item) {
   const id = ++loadId;
+  // Capture the focused element to restore it if the preview iframe steals
+  // focus on load. If the user is already focused inside the preview pane,
+  // don't override their position.
+  const ae = document.activeElement;
+  if (ae && ae !== document.body && !els.root.contains(ae)) {
+    savedFocus = ae;
+    userTookPreviewFocus = false;
+  } else if (els.root.contains(ae)) {
+    savedFocus = null;
+  }
   els.title.textContent = item.name;
   els.download.href = item["@microsoft.graph.downloadUrl"] || "#";
   els.download.setAttribute("download", item.name);
@@ -223,6 +262,7 @@ export async function open(item) {
 
 export function clear() {
   loadId++;
+  savedFocus = null;
   els.title.textContent = "Preview";
   els.download.hidden = true;
   els.open.hidden = true;
