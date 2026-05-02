@@ -82,6 +82,17 @@ function parseReferenceDate(name) {
   return `${y}-${mo}-${d}`;
 }
 
+// Display-only: strip "YYYY-MM-DD_" from the start when the prefix is a valid
+// reference date. The underlying item.name is unchanged so the viewer title,
+// download filename, and Graph requests keep using the canonical name.
+function displayName(name) {
+  if (parseReferenceDate(name) && name[10] === "_") {
+    const stripped = name.slice(11);
+    if (stripped.length > 0) return stripped;
+  }
+  return name;
+}
+
 const FOLDER_ICON = "📁";
 function fileIcon(item) {
   if (item.folder) return FOLDER_ICON;
@@ -144,7 +155,7 @@ function renderListing() {
       <span class="meta-ref">${parseReferenceDate(item.name) ?? ""}</span>
       <span class="meta-size">${item.folder ? `${item.folder.childCount ?? ""}` : formatBytes(item.size)}</span>
     `;
-    li.querySelector(".name").textContent = item.name;
+    li.querySelector(".name").textContent = displayName(item.name);
     li.addEventListener("click", () => onItemClick(item));
     li.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onItemClick(item); }
