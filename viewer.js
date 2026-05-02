@@ -35,33 +35,75 @@ let activeBlobUrl = null;
 let loadId = 0;
 
 // Focus-steal guard: the embedded Office/PDF preview iframe focuses itself on
-// load, which yanks focus out of the file list mid-navigation. We record the
-// element that was focused when the preview opened and, if focus drifts into
-// the preview pane without an explicit user gesture (pointer down or Tab key),
-// route it back. The guard releases as soon as the user explicitly takes focus
-// in the preview.
+// load (sometimes repeatedly), which yanks focus out of the file list
+// mid-navigation. The focusin event from a cross-origin iframe is unreliable,
+// so the guard combines an event listener with a requestAnimationFrame poll
+// that actively pulls focus back to a saved element whenever it drifts into
+// the preview pane. The guard releases as soon as the user explicitly takes
+// focus in the preview (pointer down on the pane, or Tab landing inside it).
 let savedFocus = null;
 let userTookPreviewFocus = false;
-let tabPressed = false;
+let focusGuardCancel = null;
 
+// Track Tab keypresses so a Tab-into-preview is recognised as user-initiated.
+// Reset on any other key so the flag doesn't go stale.
+let tabPressed = false;
 document.addEventListener("keydown", (e) => {
-  // Track Tab so a Tab-into-preview is recognized as user-initiated.
   tabPressed = e.key === "Tab";
 }, true);
 
+// Pointer down anywhere in the preview pane = user explicitly wants focus there.
 els.root.addEventListener("pointerdown", () => {
   userTookPreviewFocus = true;
+  stopFocusGuard();
 });
 
+// Tab landing inside the preview pane is also explicit. We can't tell that
+// from just the focusin (an iframe steal also fires focusin), so we gate it
+// on the Tab keydown immediately preceding the focusin.
 els.root.addEventListener("focusin", () => {
-  if (userTookPreviewFocus || tabPressed) {
+  if (tabPressed) {
     userTookPreviewFocus = true;
+    stopFocusGuard();
     return;
   }
+  if (userTookPreviewFocus) return;
+  restoreSavedFocus();
+});
+
+function restoreSavedFocus() {
   if (savedFocus && document.contains(savedFocus) && !els.root.contains(savedFocus)) {
     savedFocus.focus();
   }
-});
+}
+
+function stopFocusGuard() {
+  if (focusGuardCancel) {
+    focusGuardCancel();
+    focusGuardCancel = null;
+  }
+}
+
+// Run for ~10 seconds after a preview update; this comfortably covers Office
+// Online and PDF preview loads, which can focus themselves several times as
+// their UI hydrates. Yields to the user the moment they touch the preview.
+function startFocusGuard() {
+  stopFocusGuard();
+  if (!savedFocus) return;
+  let cancelled = false;
+  focusGuardCancel = () => { cancelled = true; };
+  const deadline = performance.now() + 10000;
+  const tick = () => {
+    if (cancelled || userTookPreviewFocus) return;
+    if (performance.now() > deadline) return;
+    const ae = document.activeElement;
+    if (ae && ae !== document.body && els.root.contains(ae)) {
+      restoreSavedFocus();
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
 
 function extOf(name) {
   const i = name.lastIndexOf(".");
@@ -214,8 +256,10 @@ export async function open(item) {
   if (ae && ae !== document.body && !els.root.contains(ae)) {
     savedFocus = ae;
     userTookPreviewFocus = false;
+    startFocusGuard();
   } else if (els.root.contains(ae)) {
     savedFocus = null;
+    stopFocusGuard();
   }
   els.title.textContent = item.name;
   els.download.href = item["@microsoft.graph.downloadUrl"] || "#";
@@ -263,6 +307,7 @@ export async function open(item) {
 export function clear() {
   loadId++;
   savedFocus = null;
+  stopFocusGuard();
   els.title.textContent = "Preview";
   els.download.hidden = true;
   els.open.hidden = true;
