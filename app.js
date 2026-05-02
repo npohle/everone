@@ -348,6 +348,74 @@ function wireEvents() {
       runSearch(q);
     }
   }, 300));
+  initSplitDivider();
+}
+
+function initSplitDivider() {
+  const divider = document.getElementById("split-divider");
+  const split = document.querySelector(".split");
+  if (!divider || !split) return;
+
+  const STORAGE_KEY = "onedrive-browser:listWidth";
+  const MIN_LIST = 200;
+  const MIN_PREVIEW = 280;
+
+  const apply = (px) => document.documentElement.style.setProperty("--list-width", `${px}px`);
+  const clamp = (px) => {
+    const max = split.getBoundingClientRect().width - MIN_PREVIEW;
+    return Math.max(MIN_LIST, Math.min(max, px));
+  };
+  const currentWidth = () => {
+    const v = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--list-width"), 10);
+    return Number.isFinite(v) ? v : 320;
+  };
+
+  const saved = parseInt(localStorage.getItem(STORAGE_KEY) || "", 10);
+  if (Number.isFinite(saved)) apply(clamp(saved));
+
+  let pointerId = null;
+  divider.addEventListener("pointerdown", (e) => {
+    pointerId = e.pointerId;
+    divider.setPointerCapture(pointerId);
+    divider.classList.add("dragging");
+    document.body.classList.add("split-dragging");
+    e.preventDefault();
+  });
+  divider.addEventListener("pointermove", (e) => {
+    if (pointerId === null) return;
+    const rect = split.getBoundingClientRect();
+    apply(clamp(e.clientX - rect.left));
+  });
+  const endDrag = (e) => {
+    if (pointerId === null) return;
+    try { divider.releasePointerCapture(pointerId); } catch {}
+    pointerId = null;
+    divider.classList.remove("dragging");
+    document.body.classList.remove("split-dragging");
+    localStorage.setItem(STORAGE_KEY, String(currentWidth()));
+  };
+  divider.addEventListener("pointerup", endDrag);
+  divider.addEventListener("pointercancel", endDrag);
+
+  divider.addEventListener("keydown", (e) => {
+    const step = e.shiftKey ? 64 : 16;
+    if (e.key === "ArrowLeft") {
+      apply(clamp(currentWidth() - step));
+    } else if (e.key === "ArrowRight") {
+      apply(clamp(currentWidth() + step));
+    } else if (e.key === "Home") {
+      apply(MIN_LIST);
+    } else if (e.key === "End") {
+      apply(clamp(split.getBoundingClientRect().width));
+    } else {
+      return;
+    }
+    localStorage.setItem(STORAGE_KEY, String(currentWidth()));
+    e.preventDefault();
+  });
+
+  // Re-clamp on window resize so the list pane never crowds the preview out.
+  window.addEventListener("resize", () => apply(clamp(currentWidth())));
 }
 
 async function start() {

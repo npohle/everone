@@ -246,11 +246,30 @@ a:hover { text-decoration: underline; }
 /* Split layout */
 .split {
   display: grid;
-  grid-template-columns: minmax(280px, 420px) 1fr;
-  gap: 12px;
+  grid-template-columns: var(--list-width, 320px) 6px 1fr;
   height: calc(100vh - 130px);
   min-height: 400px;
 }
+
+.split-divider {
+  background: var(--border);
+  cursor: col-resize;
+  align-self: stretch;
+  transition: background 0.15s;
+  user-select: none;
+  touch-action: none;
+}
+.split-divider:hover,
+.split-divider:focus-visible,
+.split-divider.dragging {
+  background: var(--accent);
+  outline: none;
+}
+
+/* While dragging, suppress pointer events on iframes so the drag isn't
+   swallowed when the cursor crosses into the preview content. */
+body.split-dragging iframe { pointer-events: none; }
+body.split-dragging { cursor: col-resize; }
 
 .list-pane {
   overflow: auto;
@@ -382,6 +401,7 @@ a:hover { text-decoration: underline; }
     grid-template-columns: 1fr;
     height: auto;
   }
+  .split-divider { display: none; }
   .preview-pane { min-height: 60vh; }
 }
 
