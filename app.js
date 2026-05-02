@@ -131,7 +131,7 @@ function renderListing() {
 
   const head = document.createElement("li");
   head.className = "row head";
-  head.innerHTML = `<span></span><span>Name</span><span>Reference</span><span>Modified</span><span>Size</span>`;
+  head.innerHTML = `<span></span><span>Name</span><span>Reference</span><span>Size</span>`;
   els.listing.appendChild(head);
 
   for (const item of sorted) {
@@ -142,7 +142,6 @@ function renderListing() {
       <span class="icon">${fileIcon(item)}</span>
       <span class="name"></span>
       <span class="meta-ref">${parseReferenceDate(item.name) ?? ""}</span>
-      <span class="meta-modified">${formatDate(item.lastModifiedDateTime)}</span>
       <span class="meta-size">${item.folder ? `${item.folder.childCount ?? ""}` : formatBytes(item.size)}</span>
     `;
     li.querySelector(".name").textContent = item.name;
