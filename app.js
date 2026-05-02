@@ -83,14 +83,19 @@ function parseReferenceDate(name) {
 }
 
 // Display-only: strip "YYYY-MM-DD_" from the start when the prefix is a valid
-// reference date. The underlying item.name is unchanged so the viewer title,
-// download filename, and Graph requests keep using the canonical name.
+// reference date, then drop everything from the first remaining underscore
+// onward (including the extension). The underlying item.name is unchanged so
+// the viewer title, download filename, and Graph requests keep using the
+// canonical name.
 function displayName(name) {
-  if (parseReferenceDate(name) && name[10] === "_") {
-    const stripped = name.slice(11);
-    if (stripped.length > 0) return stripped;
+  let s = name;
+  if (parseReferenceDate(s) && s[10] === "_") {
+    const stripped = s.slice(11);
+    if (stripped.length > 0) s = stripped;
   }
-  return name;
+  const i = s.indexOf("_");
+  if (i > 0) s = s.slice(0, i);
+  return s;
 }
 
 const FOLDER_ICON = "📁";
