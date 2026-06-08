@@ -21,6 +21,21 @@ const OFFICE_EXT = new Set([
 
 const MAX_TEXT_BYTES = 2 * 1024 * 1024; // 2 MB cap for inline text rendering.
 
+// pdf.js is loaded once at module init and kept warm for the session. The
+// worker URL MUST be the same package version as the API module or pdf.js
+// throws "API version does not match worker version".
+const PDFJS_VERSION = "4.10.38";
+let pdfjsLib = null;
+const pdfjsReady = import(
+  `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.min.mjs`
+).then((mod) => {
+  pdfjsLib = mod;
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs`;
+}).catch((err) => {
+  console.error("pdf.js failed to load", err);
+});
+
 const els = {
   root: document.getElementById("viewer"),
   body: document.getElementById("viewer-body"),
@@ -33,6 +48,34 @@ let activeBlobUrl = null;
 // Monotonic id; pending renders with stale ids are discarded so a slow load
 // doesn't clobber a faster subsequent selection.
 let loadId = 0;
+
+// Persistent pdf.js viewer: the container element is built once and reused
+// across PDF selections so each new PDF only triggers a getDocument call,
+// not a fresh pdf.js bootstrap.
+let pdfContainer = null;
+let pdfPagesEl = null;
+let currentLoadingTask = null;
+let currentPdfDoc = null;
+
+function ensurePdfContainer() {
+  if (pdfContainer) return;
+  pdfContainer = document.createElement("div");
+  pdfContainer.className = "pdf-viewer";
+  pdfPagesEl = document.createElement("div");
+  pdfPagesEl.className = "pdf-pages";
+  pdfContainer.appendChild(pdfPagesEl);
+}
+
+function disposePdfDoc() {
+  const t = currentLoadingTask;
+  const d = currentPdfDoc;
+  currentLoadingTask = null;
+  currentPdfDoc = null;
+  // Fire-and-forget; the synchronous null above is what protects new loads
+  // from being mixed up with destruction of the old one.
+  if (t) t.destroy().catch(() => {});
+  if (d) d.destroy().catch(() => {});
+}
 
 // Focus-steal guard: the embedded Office/PDF preview iframe focuses itself on
 // load (sometimes repeatedly), which yanks focus out of the file list
@@ -242,13 +285,89 @@ async function renderEmbed(item, id) {
 }
 
 async function renderPdf(item, id) {
-  // Chrome blocks blob: URLs from loading in an <iframe> as PDFs, so route
-  // through the Graph preview embed (same path used for Office docs).
-  await renderEmbed(item, id);
+  await pdfjsReady;
+  if (id !== loadId) return;
+  if (!pdfjsLib) throw new Error("PDF viewer failed to load");
+
+  ensurePdfContainer();
+  // setBody disposes whatever was previously shown (image/iframe/text) and
+  // re-attaches our persistent PDF container.
+  setBody(pdfContainer);
+  disposePdfDoc();
+  pdfPagesEl.replaceChildren();
+  pdfContainer.scrollTop = 0;
+  if (id !== loadId) return;
+
+  // Try the pre-signed OneDrive download URL first — it supports CORS and
+  // Range requests, so pdf.js streams pages without buffering the full file.
+  // Fall back to fetching the bytes ourselves if the URL load fails.
+  const downloadUrl = item["@microsoft.graph.downloadUrl"];
+  const startTask = (params) => {
+    const task = pdfjsLib.getDocument(params);
+    currentLoadingTask = task;
+    return task;
+  };
+  const fetchBytes = async () => {
+    const blob = await graph.fetchContent(item);
+    return blob.arrayBuffer();
+  };
+
+  let doc;
+  try {
+    doc = await startTask(downloadUrl
+      ? { url: downloadUrl, withCredentials: false }
+      : { data: await fetchBytes() }).promise;
+  } catch (err) {
+    if (id !== loadId) return;
+    if (downloadUrl) {
+      const data = await fetchBytes();
+      if (id !== loadId) return;
+      doc = await startTask({ data }).promise;
+    } else {
+      throw err;
+    }
+  }
+  if (id !== loadId) { doc.destroy().catch(() => {}); return; }
+  currentPdfDoc = doc;
+  currentLoadingTask = null;
+
+  const dpr = window.devicePixelRatio || 1;
+  const width = (pdfPagesEl.clientWidth || pdfContainer.clientWidth || els.body.clientWidth) - 24;
+
+  for (let p = 1; p <= doc.numPages; p++) {
+    if (id !== loadId) return;
+    const page = await doc.getPage(p);
+    if (id !== loadId) return;
+    const baseViewport = page.getViewport({ scale: 1 });
+    const scale = Math.max(0.1, width / baseViewport.width);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    canvas.className = "pdf-page";
+    canvas.width = Math.floor(viewport.width * dpr);
+    canvas.height = Math.floor(viewport.height * dpr);
+    canvas.style.width = `${Math.floor(viewport.width)}px`;
+    canvas.style.height = `${Math.floor(viewport.height)}px`;
+    pdfPagesEl.appendChild(canvas);
+    try {
+      await page.render({
+        canvasContext: canvas.getContext("2d"),
+        viewport,
+        transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null,
+      }).promise;
+    } catch (err) {
+      // Renders are cancelled when the document is destroyed mid-flight.
+      if (id !== loadId) return;
+      throw err;
+    }
+  }
 }
 
 export async function open(item) {
   const id = ++loadId;
+  // Free any PDF document held from a prior selection. renderPdf will load
+  // a fresh one if the new item is a PDF; other render paths benefit from
+  // releasing the memory immediately.
+  if (currentLoadingTask || currentPdfDoc) disposePdfDoc();
   // Capture the focused element to restore it if the preview iframe steals
   // focus on load. If the user is already focused inside the preview pane,
   // don't override their position.
@@ -306,6 +425,7 @@ export async function open(item) {
 
 export function clear() {
   loadId++;
+  disposePdfDoc();
   savedFocus = null;
   stopFocusGuard();
   els.title.textContent = "Preview";
