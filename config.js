@@ -1,4 +1,4 @@
-// OneDrive Browser configuration.
+// EverOne configuration.
 //
 // SETUP — register an Azure AD application (free, no subscription needed):
 //   1. Go to https://portal.azure.com → "App registrations" → "New registration".
