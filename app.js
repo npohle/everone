@@ -132,19 +132,28 @@ function renderListing() {
 
   const head = document.createElement("li");
   head.className = "row head";
-  head.innerHTML = `<span></span><span>Name</span><span>Reference</span>`;
+  const hIcon = document.createElement("span");
+  const hName = document.createElement("span");
+  hName.textContent = "Name";
+  const hRef = document.createElement("span");
+  hRef.textContent = "Reference";
+  head.append(hIcon, hName, hRef);
   els.listing.appendChild(head);
 
   for (const item of sorted) {
     const li = document.createElement("li");
     li.className = "row" + (item.id === state.selectedId ? " selected" : "");
     li.dataset.id = item.id;
-    li.innerHTML = `
-      <span class="icon">${fileIcon(item)}</span>
-      <span class="name"></span>
-      <span class="meta-ref">${parseReferenceDate(item.name) ?? ""}</span>
-    `;
-    li.querySelector(".name").textContent = displayName(item.name);
+    const iconSpan = document.createElement("span");
+    iconSpan.className = "icon";
+    iconSpan.textContent = fileIcon(item);
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "name";
+    nameSpan.textContent = displayName(item.name);
+    const refSpan = document.createElement("span");
+    refSpan.className = "meta-ref";
+    refSpan.textContent = parseReferenceDate(item.name) ?? "";
+    li.append(iconSpan, nameSpan, refSpan);
     li.addEventListener("click", () => onItemClick(item));
     li.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onItemClick(item); }
