@@ -432,6 +432,76 @@ body.split-dragging { cursor: col-resize; }
   .preview-pane { min-height: 60vh; }
 }
 
+/* Viewer meta (file size, modified date) */
+.viewer-meta {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Keyboard shortcuts overlay */
+.shortcuts-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.shortcuts-overlay[hidden] { display: none; }
+
+.shortcuts-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px 32px;
+  max-width: 400px;
+  width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+.shortcuts-panel h2 {
+  margin: 0 0 16px;
+  font-size: 16px;
+}
+
+.shortcuts-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  margin: 0;
+}
+.shortcuts-list dt {
+  text-align: right;
+}
+.shortcuts-list dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+}
+
+.shortcuts-list kbd {
+  display: inline-block;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+  min-width: 28px;
+  text-align: center;
+}
+
+.shortcuts-hint {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .toast {
   position: fixed;
   bottom: 20px;
