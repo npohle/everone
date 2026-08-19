@@ -1,0 +1,16 @@
+{
+  "name": "onedrive-browser",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Static, client-only OneDrive file browser and viewer.",
+  "type": "module",
+  "scripts": {
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test \"tests/unit/*.test.js\"",
+    "test:e2e": "node tests/e2e/run.js",
+    "serve": "node tests/e2e/serve.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
