@@ -31,7 +31,7 @@ describe("app shell", { concurrency: 1 }, () => {
 
   it("renders the signed-out landing page", async () => {
     const state = await rig.page.state();
-    assert.equal(state.title, "OneDrive Browser");
+    assert.equal(state.title, "DEMO 6 OneDrive Browser");
     assert.equal(state.signedOutVisible, true);
     assert.equal(state.browserVisible, false);
     assert.equal(state.authButton, "Sign in");
