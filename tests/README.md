@@ -1,102 +1,97 @@
-# Test suite
+# End-to-end tests
 
-Two layers, no third-party dependencies:
-
-| Command | What it does |
-| --- | --- |
-| `npm run test:unit` | Pure Node tests for the harness itself. Fast, offline, no browser. |
-| `npm run test:e2e` | Drives the real app in a real Chrome, signing in as a real Microsoft account. |
-| `npm test` | Both, unit first. |
+The e2e suite is [bats](https://github.com/bats-core/bats-core) driving a real
+Chrome session via [`agent-browser`](https://www.npmjs.com/package/agent-browser),
+against the actual app served over TLS by [Caddy](https://caddyserver.com/), signed
+in as a real Microsoft account. There is no mocking: every run performs a full
+OAuth sign-in against `login.microsoftonline.com`.
 
 ## Requirements
 
-* Node 20+
+* [`bats-core`](https://github.com/bats-core/bats-core) — `brew install bats-core`
 * [`agent-browser`](https://www.npmjs.com/package/agent-browser) — `npm i -g agent-browser && agent-browser install`
-* `oathtool` (`apt install oathtool`) — mints the authenticator codes
-* `openssl` — issues the dev server's throwaway certificate
+* [`caddy`](https://caddyserver.com/) — `brew install caddy`
+* `oathtool` — `brew install oath-toolkit` — mints TOTP codes for the authenticator step
+* `curl`, `nc` (both preinstalled on macOS)
 
-Credentials come from the environment and are never written to disk:
+## Credentials
 
-```bash
-export TEST_USER_PASSWORD=...     # password of the test account
-export TEST_USER_TOTP_SEED=...    # base32 secret shared with the authenticator app
-npm run test:e2e
-```
-
-Run a subset by name: `node tests/e2e/run.js sign-in`.
-
-## How the e2e suite is wired
-
-```
-run.js
-  └── startRig()
-        ├── dev-server.js   serves the working tree over https on an ephemeral port
-        ├── chrome.js       launches Chrome with that port mapped onto the app origin
-        └── browser.js      agent-browser, attached to Chrome over CDP
-                └── specs/  node:test files, run sequentially against the shared rig
-```
-
-### Why the app is served on its production origin
-
-`auth.js` derives the OAuth redirect URI from `window.location`, and the Azure app
-registration only accepts the deployed origin. A dev server on `http://localhost:4173/`
-is rejected by Microsoft with `invalid_request: the provided value for the input
-parameter 'redirect_uri' is not valid`.
-
-So the suite serves the **local working copy** and points the browser's host
-resolver at it:
-
-```
---host-resolver-rules=MAP npohle.github.io 127.0.0.1:<dev server port>
---ignore-certificate-errors
-```
-
-Only that hostname is redirected — `login.live.com` and `graph.microsoft.com` are
-reached for real. The `app shell` spec fetches `./__e2e/health` to assert the page
-under test really did come from the dev server and not from the deployed site.
-
-Point the suite at a different deployment (or a `localhost` origin, if you register
-one) with `E2E_APP_ORIGIN` / `E2E_APP_BASE_PATH`.
-
-### Why sign-in is a loop, not a script
-
-Microsoft varies the pages it shows based on what it remembers about the account
-and the device: an account picker may appear, consent is only asked once, "Stay
-signed in?" comes and goes. `login-steps.js` classifies whatever page is on screen
-from its accessibility snapshot, and `microsoft-login.js` performs the one action
-that step needs, until the popup returns to the app's redirect URI.
-
-Because the classifier is pure, every branch — including error pages and the
-`password` vs `username` ambiguity — is covered by unit tests against snapshots
-captured from the real flow (`tests/unit/fixtures/snapshots.js`).
-
-Two details that are easy to get wrong and are pinned by tests:
-
-* **Type, don't fill.** Setting an input's value directly leaves Microsoft's form
-  handler unaware of the change; the submit button then silently no-ops.
-* **Scroll before clicking.** On a short viewport "Next" renders below the fold and
-  the click never lands, so the browser wrapper scrolls the target into view first.
-
-## Environment variables
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `TEST_USER_PASSWORD` | *(required)* | Password of the test account |
-| `TEST_USER_TOTP_SEED` | *(required)* | Base32 authenticator secret |
-| `TEST_USER` | `nik.o.laus.pohle@gmail.com` | Account to sign in as |
-| `E2E_APP_ORIGIN` | `https://npohle.github.io` | Origin the app is served as |
-| `E2E_APP_BASE_PATH` | `/everone/` | Path the app is served under |
-| `E2E_HEADED` | `0` | Show the browser window |
-| `E2E_KEEP_OPEN` | `0` | Leave the browser running after the suite |
-| `E2E_TIMEOUT_MS` | `30000` | Default per-command timeout |
-| `E2E_CHROME_PATH` | *(auto-detected)* | Chrome binary to launch |
-| `E2E_VERBOSE` | `0` | Log every agent-browser command |
-
-## Serving the app by hand
+Test account credentials live in a `.env` file at the repo root (gitignored, never
+committed):
 
 ```bash
-npm run serve      # http://127.0.0.1:4173/everone/
+TEST_USERNAME=you@example.com
+TEST_PASSWORD=...
+TEST_TOTP_SEED=...   # base32 secret shared with the authenticator app
 ```
 
-Useful for looking at the UI; sign-in will not work there, for the redirect-URI
-reason above.
+## Running the suite
+
+```bash
+bats tests/e2e
+```
+
+Run a single spec file the same way: `bats tests/e2e/02-search.bats`.
+
+## How it's wired
+
+`tests/e2e/setup_suite.bash` provides bats' `setup_suite` / `teardown_suite`
+hooks, run once for the whole `.bats` suite in the directory:
+
+1. Picks a free local port and starts Caddy, serving the repo root over
+   internal TLS and mapped to the app's real hostname (`npohle.github.io`) via
+   `--host-resolver-rules`. This matters because `auth.js` derives the OAuth
+   redirect URI from `window.location`, and the Azure app registration only
+   accepts the deployed origin — a plain `localhost` dev server gets rejected
+   by Microsoft with an `invalid_request` / bad `redirect_uri` error.
+2. Opens a headed `agent-browser` session (`--session "$RUN_ID"`) and drives
+   the full Microsoft sign-in flow (username → password → TOTP code →
+   "Stay signed in?"), screenshotting each step.
+3. Exports `RUN_ID` and `ARTEFACTS_DIR` for the individual spec files to reuse
+   the same authenticated session and drop their own screenshots alongside
+   the sign-in ones.
+
+`teardown_suite` stops Caddy and closes the `agent-browser` session.
+
+Each `*.bats` file is a set of `@test` blocks that continue driving that same
+already-authenticated session — e.g. `01-authentication.bats` just asserts
+sign-in succeeded, `02-search.bats` exercises the search box. Files run in
+name order, so number new specs accordingly.
+
+Screenshots land in `tests/artefacts/<RUN_ID>/` (gitignored) and are handy for
+debugging a failing run after the fact.
+
+## Working interactively with `tests/dev.sh`
+
+Running the full suite for every small change is slow, and a bats run tears
+its browser session down as soon as it finishes. `tests/dev.sh` gives you the
+same authenticated session on demand, independent of any test run, so you can
+poke at the app by hand or iterate on new `agent-browser` commands before
+turning them into a test.
+
+Run it directly:
+
+```bash
+tests/dev.sh
+```
+
+This starts Caddy, opens a **headed** browser, and runs through the same
+Microsoft sign-in flow as `setup_suite.bash`. Once sign-in succeeds, Caddy is
+shut down again immediately — the SPA runs entirely client-side once loaded,
+so it doesn't need the server for anything after the initial page load and
+OAuth redirect. The browser window and its `agent-browser` session are left
+running.
+
+The script prints the `RUN_ID` it used. Target that same session from another
+terminal with `agent-browser --session "<RUN_ID>" ...` to inspect the page,
+try out selectors, or reproduce a failing test step manually — e.g.:
+
+```bash
+agent-browser --session "<RUN_ID>" snapshot -i
+agent-browser --session "<RUN_ID>" get count '#listing .row:not(.head)'
+```
+
+`tests/dev.sh` also defines `start_and_authenticate(run_id, artefacts_dir,
+headed)` as a sourceable function (the same steps `setup_suite.bash` performs
+for the bats suite) — source the file instead of executing it if you want to
+call that function with your own `RUN_ID`/`ARTEFACTS_DIR`.
