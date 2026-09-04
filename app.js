@@ -240,6 +240,7 @@ async function loadCurrent() {
   } finally {
     if (id === state.loadId) els.loading.hidden = true;
   }
+  pushNavHash();
 }
 
 async function loadMore() {
@@ -305,7 +306,13 @@ async function showSignedIn(account) {
   els.user.textContent = account.username || account.name || "";
   els.authBtn.textContent = "Sign out";
   state.stack = [];
-  await loadCurrent();
+  // Restore folder navigation from URL hash if present.
+  const hashStack = decodeNavHash(window.location.hash);
+  if (hashStack.length > 0) {
+    await restoreFromHash();
+  } else {
+    await loadCurrent();
+  }
 }
 
 function showSignedOut() {
@@ -369,6 +376,8 @@ function wireEvents() {
   }, 300));
   initListingKeyboard();
   initSplitDivider();
+  initGlobalShortcuts();
+  initHashNavigation();
 }
 
 function initListingKeyboard() {
@@ -458,6 +467,187 @@ function initSplitDivider() {
 
   // Re-clamp on window resize so the list pane never crowds the preview out.
   window.addEventListener("resize", () => apply(clamp(currentWidth())));
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard shortcuts & help overlay
+// ---------------------------------------------------------------------------
+const SHORTCUTS = [
+  { key: "/", description: "Focus search" },
+  { key: "Escape", description: "Clear search / go up one level" },
+  { key: "?", description: "Toggle keyboard shortcuts" },
+  { key: "ArrowUp", description: "Previous file in list" },
+  { key: "ArrowDown", description: "Next file in list" },
+  { key: "Enter", description: "Open selected folder / file" },
+  { key: "Backspace", description: "Go up one level" },
+];
+
+function buildShortcutsOverlay() {
+  const overlay = document.createElement("div");
+  overlay.id = "shortcuts-overlay";
+  overlay.className = "shortcuts-overlay";
+  overlay.hidden = true;
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.hidden = true;
+  });
+
+  const panel = document.createElement("div");
+  panel.className = "shortcuts-panel";
+
+  const header = document.createElement("h2");
+  header.textContent = "Keyboard shortcuts";
+  panel.appendChild(header);
+
+  const list = document.createElement("dl");
+  list.className = "shortcuts-list";
+  for (const s of SHORTCUTS) {
+    const dt = document.createElement("dt");
+    const kbd = document.createElement("kbd");
+    kbd.textContent = s.key;
+    dt.appendChild(kbd);
+    list.appendChild(dt);
+    const dd = document.createElement("dd");
+    dd.textContent = s.description;
+    list.appendChild(dd);
+  }
+  panel.appendChild(list);
+
+  const hint = document.createElement("p");
+  hint.className = "shortcuts-hint";
+  hint.textContent = "Press ? or Escape to close";
+  panel.appendChild(hint);
+
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function initGlobalShortcuts() {
+  const overlay = buildShortcutsOverlay();
+
+  document.addEventListener("keydown", (e) => {
+    // Don't intercept when user is typing in an input/textarea/select.
+    const tag = e.target.tagName;
+    const isInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+
+    if (e.key === "?" && !isInput) {
+      e.preventDefault();
+      overlay.hidden = !overlay.hidden;
+      return;
+    }
+
+    if (e.key === "Escape") {
+      if (!overlay.hidden) {
+        overlay.hidden = true;
+        e.preventDefault();
+        return;
+      }
+      if (isInput && els.search.value) {
+        els.search.value = "";
+        els.search.blur();
+        loadCurrent();
+        e.preventDefault();
+        return;
+      }
+      if (!isInput && state.stack.length > 0) {
+        state.stack.pop();
+        loadCurrent();
+        e.preventDefault();
+        return;
+      }
+    }
+
+    if (e.key === "/" && !isInput) {
+      e.preventDefault();
+      els.search.focus();
+      els.search.select();
+      return;
+    }
+
+    if (e.key === "Backspace" && !isInput) {
+      if (state.stack.length > 0) {
+        e.preventDefault();
+        state.stack.pop();
+        loadCurrent();
+      }
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// URL hash-based navigation
+// ---------------------------------------------------------------------------
+function encodeNavHash(stack) {
+  if (!stack || stack.length === 0) return "";
+  return "#path=" + stack.map((s) => encodeURIComponent(s.id)).join("/");
+}
+
+function decodeNavHash(hash) {
+  if (!hash || !hash.startsWith("#path=")) return [];
+  const raw = hash.slice("#path=".length);
+  if (!raw) return [];
+  return raw.split("/").map((segment) => ({
+    id: decodeURIComponent(segment),
+    name: null,
+  }));
+}
+
+function pushNavHash() {
+  const hash = encodeNavHash(state.stack);
+  const current = window.location.hash || "";
+  if (hash !== current) {
+    history.pushState(null, "", hash || window.location.pathname);
+  }
+}
+
+async function restoreFromHash() {
+  const decoded = decodeNavHash(window.location.hash);
+  if (decoded.length === 0) return;
+  // Resolve folder names from Graph for each level.
+  const resolved = [];
+  for (const entry of decoded) {
+    try {
+      const item = await graph.getItem(entry.id);
+      resolved.push({ id: item.id, name: item.name });
+    } catch {
+      // If we can't resolve a folder (deleted, no access), stop here.
+      break;
+    }
+  }
+  if (resolved.length > 0) {
+    state.stack = resolved;
+    await loadCurrent();
+  }
+}
+
+function initHashNavigation() {
+  window.addEventListener("popstate", () => {
+    const decoded = decodeNavHash(window.location.hash);
+    // Navigating back to root when hash is empty.
+    if (decoded.length === 0 && state.stack.length > 0) {
+      state.stack = [];
+      loadCurrent();
+      return;
+    }
+    if (decoded.length > 0) {
+      // Resolve names for the new hash state.
+      (async () => {
+        const resolved = [];
+        for (const entry of decoded) {
+          try {
+            const item = await graph.getItem(entry.id);
+            resolved.push({ id: item.id, name: item.name });
+          } catch {
+            break;
+          }
+        }
+        if (resolved.length > 0) {
+          state.stack = resolved;
+          await loadCurrent();
+        }
+      })();
+    }
+  });
 }
 
 async function start() {
