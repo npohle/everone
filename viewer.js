@@ -176,12 +176,20 @@ function setBodyIfCurrent(id, node) {
 function unsupported(item) {
   const div = document.createElement("div");
   div.className = "unsupported";
-  div.innerHTML = `
-    <h2>Preview not available</h2>
-    <p>This file type can't be previewed in the browser.</p>
-    <p>Use <strong>Download</strong> or <strong>Open in OneDrive</strong>.</p>
-  `;
+  const h2 = document.createElement("h2");
+  h2.textContent = "Preview not available";
+  const p1 = document.createElement("p");
+  p1.textContent = "This file type can\u2019t be previewed in the browser.";
+  const p2 = document.createElement("p");
+  p2.append("Use ", bold("Download"), " or ", bold("Open in OneDrive"), ".");
+  div.append(h2, p1, p2);
   return div;
+}
+
+function bold(text) {
+  const b = document.createElement("strong");
+  b.textContent = text;
+  return b;
 }
 
 async function renderImage(item, id) {
@@ -222,11 +230,13 @@ async function renderText(item, id) {
 function unsupportedSize(item) {
   const div = document.createElement("div");
   div.className = "unsupported";
-  div.innerHTML = `
-    <h2>File too large to preview</h2>
-    <p>${formatBytes(item.size)} exceeds the inline preview limit (${formatBytes(MAX_TEXT_BYTES)}).</p>
-    <p>Use <strong>Download</strong> instead.</p>
-  `;
+  const h2 = document.createElement("h2");
+  h2.textContent = "File too large to preview";
+  const p1 = document.createElement("p");
+  p1.textContent = `${formatBytes(item.size)} exceeds the inline preview limit (${formatBytes(MAX_TEXT_BYTES)}).`;
+  const p2 = document.createElement("p");
+  p2.append("Use ", bold("Download"), " instead.");
+  div.append(h2, p1, p2);
   return div;
 }
 
@@ -249,8 +259,11 @@ async function renderMarkdown(item, id) {
   const wrap = document.createElement("article");
   wrap.className = "markdown";
   // Render via the marked CDN if available, otherwise fall back to <pre>.
+  // Sanitise the HTML through DOMPurify to prevent XSS from user-uploaded
+  // markdown files that embed raw HTML or JavaScript.
   if (window.marked) {
-    wrap.innerHTML = window.marked.parse(text, { mangle: false, headerIds: false });
+    const raw = window.marked.parse(text, { mangle: false, headerIds: false });
+    wrap.innerHTML = window.DOMPurify ? window.DOMPurify.sanitize(raw) : raw;
   } else {
     const pre = document.createElement("pre");
     pre.textContent = text;
@@ -259,15 +272,29 @@ async function renderMarkdown(item, id) {
   setBodyIfCurrent(id, wrap);
 }
 
-async function ensureMarked() {
-  if (window.marked) return;
-  await new Promise((resolve, reject) => {
+async function loadScript(url, errorMsg) {
+  return new Promise((resolve, reject) => {
     const s = document.createElement("script");
-    s.src = "https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js";
+    s.src = url;
     s.onload = resolve;
-    s.onerror = () => reject(new Error("Failed to load markdown renderer"));
+    s.onerror = () => reject(new Error(errorMsg));
     document.head.appendChild(s);
   });
+}
+
+async function ensureMarked() {
+  if (!window.DOMPurify) {
+    await loadScript(
+      "https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js",
+      "Failed to load HTML sanitizer",
+    );
+  }
+  if (!window.marked) {
+    await loadScript(
+      "https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js",
+      "Failed to load markdown renderer",
+    );
+  }
 }
 
 async function renderEmbed(item, id) {
@@ -418,7 +445,12 @@ export async function open(item) {
     if (id !== loadId) return;
     const div = document.createElement("div");
     div.className = "unsupported";
-    div.innerHTML = `<h2>Preview failed</h2><p>${(err && err.message) || "Unknown error"}</p>`;
+    const h2 = document.createElement("h2");
+    h2.textContent = "Preview failed";
+    const p = document.createElement("p");
+    p.textContent = (err && err.message) || "Unknown error";
+    div.appendChild(h2);
+    div.appendChild(p);
     setBody(div);
   }
 }

@@ -3,10 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 script-src 'self' https://cdn.jsdelivr.net;
+                 style-src 'self' 'unsafe-inline';
+                 img-src 'self' blob: https:;
+                 media-src 'self' blob:;
+                 font-src 'self' https:;
+                 connect-src https://graph.microsoft.com https://login.microsoftonline.com https://cdn.jsdelivr.net blob:;
+                 frame-src https:;
+                 worker-src blob: https://cdn.jsdelivr.net;
+                 object-src 'none';
+                 base-uri 'self';" />
   <title>OneDrive Browser</title>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📁</text></svg>" />
   <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"
+          integrity="sha384-YnOjsoOxSYo65h1BXWnSq24bFbqW8HfzMWSEQxYEMRmjW9Vl1J3HZI3iZxqNYvIi"
           crossorigin="anonymous"></script>
 </head>
 <body>
