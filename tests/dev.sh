@@ -17,7 +17,21 @@ find_port() {
     return 1
 }
 
-# start caddy file server with internal TLS enabled on a free port number picked from a fixed list 
+# poll `find` until the given text appears in the page snapshot, or time out (seconds)
+function wait_for_text() {
+    local session="$1" text="$2" timeout_s="${3:-30}"
+    local tries=0
+    while (( tries < timeout_s * 2 )); do
+        if playwright-cli -s="$session" --raw find "$text" 2>/dev/null | grep -q "^Found"; then
+            return 0
+        fi
+        sleep 0.5
+        tries=$((tries + 1))
+    done
+    return 1
+}
+
+# start caddy file server with internal TLS enabled on a free port number picked from a fixed list
 # start a browser session with a hostname mapping (required for OAuth flow). use --headed mode if not started from a bats test suite
 # authenticate with Microsoft account specified in .env file or env vars
 # kill caddy file server immediately after successful authentication because SPA can run without a server afterwards
@@ -28,9 +42,13 @@ function start_and_authenticate() {
     source .env || true
     set +a
 
+    set -e
+
     export RUN_ID="${1}"
     export ARTEFACTS_DIR="${2}"
     export HEADED="${3}"
+
+    local HOST="npohle.github.io"
 
     echo "start_and_authenticate: RUN_ID=$RUN_ID"
     echo "start_and_authenticate: ARTEFACTS_DIR=$ARTEFACTS_DIR"
@@ -38,56 +56,73 @@ function start_and_authenticate() {
 
     mkdir -p "$ARTEFACTS_DIR"
 
-    export CADDYPORT=$(find_port "1443" "2443" "3443" "4443" "5443" "6443" "7443" "8443" "9443")    
-    printf "https://127.0.0.1:${CADDYPORT}, https://npohle.github.io:${CADDYPORT} {\n log\n tls internal\n root * $(git rev-parse --show-toplevel)/\n file_server\n}" | caddy run --adapter caddyfile --config - >"$ARTEFACTS_DIR/caddy.log" 2>&1 &
+    export CADDYPORT=$(find_port "1443" "2443" "3443" "4443" "5443" "6443" "7443" "8443" "9443")
+    printf "https://127.0.0.1:${CADDYPORT}, https://npohle.github.io:${CADDYPORT} {\n log\n tls internal\n root * $(git rev-parse --show-toplevel)/../\n file_server\n}" | caddy run --adapter caddyfile --config - >"$ARTEFACTS_DIR/caddy.log" 2>&1 &
     export CADDY_PID=$!
 
     # Wait until Caddy is actually available
     echo "Checking if Caddy is up and running on port $CADDYPORT"
     for _ in {1..50}; do
-        if curl --silent --fail --insecure "https://127.0.0.1:$CADDYPORT" >/dev/null; then
-            
+        if curl --silent --fail --insecure "https://127.0.0.1:$CADDYPORT/everone" >/dev/null; then
+
             echo "Caddy is up and running on port $CADDYPORT"
 
-            # agent-browser --session "$RUN_ID" close >/dev/null 2>&1 || true
-            if [[ "$HEADED" == "true" ]]; then
-                agent-browser --session "$RUN_ID" --args "--host-resolver-rules=MAP npohle.github.io 127.0.0.1:$CADDYPORT" --ignore-https-errors  --headed open
+            # playwright-cli -s="$RUN_ID" close >/dev/null 2>&1 || true
+
+            # playwright-cli's own --headed/headless launch option, keyed off the
+            # host-resolver mapping onto the local Caddy port picked above; needs
+            # ignoreHTTPSErrors because Caddy's internal CA isn't trusted by default
+            local config; config=$(mktemp)
+            echo "{\"browser\": {\"launchOptions\": {\"headless\": $([[ \"$HEADED\" == \"true\" ]] && echo false || echo true), \"args\": [\"--host-resolver-rules=MAP $HOST 127.0.0.1:$CADDYPORT\"]},\"contextOptions\": {\"ignoreHTTPSErrors\": true}}}" > "$config"
+            playwright-cli -s="$RUN_ID" --config="$config" open "https://$HOST/everone"
+            rm -f "$config"
+
+            playwright-cli -s="$RUN_ID" click "getByRole('button', { name: 'Sign in with Microsoft' })"
+            playwright-cli -s="$RUN_ID" tab-list
+            playwright-cli -s="$RUN_ID" tab-select 1
+            
+            playwright-cli -s="$RUN_ID" fill "getByRole('textbox', { name: 'Email or phone number' })" "$TEST_USERNAME"
+            playwright-cli -s="$RUN_ID" screenshot --filename="$ARTEFACTS_DIR/00-01-username.png"
+            playwright-cli -s="$RUN_ID" click "getByRole('button', { name: 'Next' })"
+
+            playwright-cli -s="$RUN_ID" fill "getByRole('textbox', { name: 'Password' })" "$TEST_PASSWORD"
+            playwright-cli -s="$RUN_ID" screenshot --filename="$ARTEFACTS_DIR/00-02-password.png"
+            playwright-cli -s="$RUN_ID" click "getByRole('button', { name: 'Next' })"
+
+            playwright-cli -s="$RUN_ID" fill "getByRole('textbox', { name: 'Code' })" "$(oathtool --totp -b ${TEST_TOTP_SEED})"
+            playwright-cli -s="$RUN_ID" click "getByRole('button', { name: 'Next' })"
+
+            playwright-cli -s="$RUN_ID" screenshot --filename="$ARTEFACTS_DIR/00-03-stay.png"
+            playwright-cli -s="$RUN_ID" click "getByRole('button', { name: 'No' })"
+
+
+            echo "CHECK 1"
+            playwright-cli -s="$RUN_ID" find "Load more"
+
+            echo "CHECK 2"
+            if wait_for_text "$RUN_ID" "Load more"; then
+                echo "Authentication successful"
             else
-                agent-browser --session "$RUN_ID" --args "--host-resolver-rules=MAP npohle.github.io 127.0.0.1:$CADDYPORT" --ignore-https-errors open
+                if wait_for_text "$RUN_ID" "needs your permission to"; then
+                    playwright-cli -s="$RUN_ID" click "getByRole('button', { name: 'Accept' })"
+                fi
+                if wait_for_text "$RUN_ID" "Load more"; then
+                    echo "Authentication successful"
+                else
+                    echo "Authentication failed"
+                    playwright-cli -s="$RUN_ID" screenshot --filename="$ARTEFACTS_DIR/00-05-failed.png"
+                    return 1
+                fi
             fi
 
-            agent-browser --session "$RUN_ID" open https://npohle.github.io/everone && agent-browser --session "$RUN_ID" wait --load networkidle
+            playwright-cli -s="$RUN_ID" screenshot --filename="$ARTEFACTS_DIR/00-04-browser.png"
             
-            agent-browser --session "$RUN_ID" find role button click --name "Sign in with Microsoft"
-            
-            agent-browser --session "$RUN_ID" wait --text "Use your Microsoft account."
-            agent-browser --session "$RUN_ID" find label "Email or phone number" fill "$TEST_USERNAME"
-            agent-browser --session "$RUN_ID" screenshot "$ARTEFACTS_DIR/00-01-username.png"
-            agent-browser --session "$RUN_ID" find role button click --name "Next"
-            
-            agent-browser --session "$RUN_ID" wait --text "Enter your password"
-            agent-browser --session "$RUN_ID" find label "Password" fill "$TEST_PASSWORD"
-            agent-browser --session "$RUN_ID" screenshot "$ARTEFACTS_DIR/00-02-password.png"
-            agent-browser --session "$RUN_ID" find role button click --name "Next"
-            
-            agent-browser --session "$RUN_ID" wait --text "Enter the code generated by your authenticator app"
-            agent-browser --session "$RUN_ID" find label "Code" fill "$(oathtool --totp -b ${TEST_TOTP_SEED})"
-            agent-browser --session "$RUN_ID" find role button click --name "Next"
-            
-            agent-browser --session "$RUN_ID" wait --text "Stay signed in?"
-            agent-browser --session "$RUN_ID" screenshot "$ARTEFACTS_DIR/00-03-stay.png"
-            agent-browser --session "$RUN_ID" find role button click --name "No"
-
-            agent-browser --session "$RUN_ID" wait --load networkidle
-            
-            agent-browser --session "$RUN_ID" wait --text "Sign out"
-            agent-browser --session "$RUN_ID" screenshot "$ARTEFACTS_DIR/00-04-browser.png"
 
             kill "$CADDY_PID" 2>/dev/null || true
             wait "$CADDY_PID" 2>/dev/null || true
 
             echo "Caddy was closed on port $CADDYPORT"
-            
+
             return 0
         fi
         sleep 0.1
