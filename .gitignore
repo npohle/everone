@@ -1,1 +1,10 @@
 .env
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
+
+node_modules/
+test-results/
+tests/artefacts/
+.playwright-e2e-state.*.json
+.caddy-server-state.json
+playwright/.auth/

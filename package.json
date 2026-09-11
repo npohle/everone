@@ -7,10 +7,19 @@
   "scripts": {
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "node --test \"tests/unit/*.test.js\"",
-    "test:e2e": "node tests/e2e/run.js",
-    "serve": "node tests/e2e/serve.js"
+    "test:e2e": "RUN_ID=\"$(date +%Y%m%d-%H%M%S)-$$\" playwright test",
+    "test:explorative:authenticatedBrowserSession": "node tests/explorative/authenticatedBrowserSession.ts"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^22.20.2",
+    "dotenv": "^17.4.2"
+  },
+  "dependencies": {
+    "commander": "^15.0.0",
+    "picocolors": "^1.1.1"
   }
 }
