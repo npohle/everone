@@ -43,19 +43,30 @@ export const test = base.extend<Fixtures>({
 
     console.log(`Creating a brand new context`);
 
-
-    const authFile = path.join(String(process.env.ARTEFACTS_DIR), 'auth.json');
-    if (!existsSync(authFile)) {
-      console.log("No auth.json file found, please run the 'authenticate' test first to generate it.");
+    // Both files hold the raw value directly (see auth.setup.ts's
+    // JSON.stringify(storageState) / JSON.stringify(sessionStorage)) — no
+    // wrapper key to destructure.
+    const localstorageFile = path.join(String(process.env.ARTEFACTS_DIR), 'localstorage.json');
+    const localstorageState = existsSync(localstorageFile)
+      ? JSON.parse(readFileSync(localstorageFile, 'utf8'))
+      : undefined;
+    if (!localstorageState) {
+      console.log("No localstorage.json file found, please run the 'authenticate' test first to generate it.");
     } else {
-      console.log(`Using auth.json file from ${authFile}`);
+      console.log(`Using localstorage.json file from ${localstorageFile}`);
     }
 
-    const { storageState, sessionStorage = [] } = existsSync(authFile)
-      ? JSON.parse(readFileSync(authFile, 'utf8'))
-      : { storageState: undefined, sessionStorage: [] };
+    const context = await browser.newContext({ storageState: localstorageState });
 
-    const context = await browser.newContext({ storageState });
+    const sessionStorageFile = path.join(String(process.env.ARTEFACTS_DIR), 'sessionstorage.json');
+    const sessionStorage: Array<{ name: string; value: string }> = existsSync(sessionStorageFile)
+      ? JSON.parse(readFileSync(sessionStorageFile, 'utf8'))
+      : [];
+    if (sessionStorage.length === 0) {
+      console.log("No sessionstorage.json file found, please run the 'authenticate' test first to generate it.");
+    } else {
+      console.log(`Using sessionstorage.json file from ${sessionStorageFile}`);
+    }
 
     if (sessionStorage.length > 0) {
       // sessionStorage isn't part of storageState — seed it via an init

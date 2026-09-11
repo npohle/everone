@@ -15,7 +15,6 @@ setup('authenticate', async ({ page }) => {
     const popup = await popupPromise;
   
     await popup.getByText("Use your Microsoft account.").waitFor();
-    //await popup.getByLabel("Email or phone number").fill(requireEnv("TEST_USERNAME"));
     await popup.getByLabel("Email or phone number").fill(process.env.TEST_USERNAME!);
     await popup.screenshot({ path: path.join(process.env.ARTEFACTS_DIR!, "00-01-username.png") });
     await popup.getByRole("button", { name: "Next" }).click();
@@ -73,14 +72,20 @@ setup('authenticate', async ({ page }) => {
         await page.screenshot({ path: path.join(process.env.ARTEFACTS_DIR!, "00-04-browser.png") });
         // Serialize cookies/localStorage (storageState) and MSAL's token cache
         // (sessionStorage — storageState() alone doesn't capture that).
-        console.log("Writing auth.json to " + path.join(process.env.ARTEFACTS_DIR!, "auth.json"));
+        console.log("Writing localstorage.json to " + path.join(process.env.ARTEFACTS_DIR!, "localstorage.json"));
         const storageState = await page.context().storageState();
+        fs.writeFileSync(
+            path.join(process.env.ARTEFACTS_DIR!, 'localstorage.json'),
+            JSON.stringify(storageState),
+        );
+        console.log("Did write localstorage.json to " + path.join(process.env.ARTEFACTS_DIR!, "localstorage.json"));
+
         const sessionStorage = await page.sessionStorage.items();
         fs.writeFileSync(
-            path.join(process.env.ARTEFACTS_DIR!, 'auth.json'),
-            JSON.stringify({ storageState, sessionStorage }),
+            path.join(process.env.ARTEFACTS_DIR!, 'sessionstorage.json'),
+            JSON.stringify(sessionStorage),
         );
-        console.log("Did write auth.json to " + path.join(process.env.ARTEFACTS_DIR!, "auth.json"));
+        console.log("Did write sessionstorage.json to " + path.join(process.env.ARTEFACTS_DIR!, "sessionstorage.json"));
     })
     .catch(async () => {
         await page.screenshot({ path: path.join(process.env.ARTEFACTS_DIR!, "00-05-failed.png") });
