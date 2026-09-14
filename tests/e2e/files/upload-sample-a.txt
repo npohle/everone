@@ -1,0 +1,5 @@
+EverOne e2e upload sample A.
+
+This file is dragged onto a folder by 05-upload.spec.ts to exercise the
+drag-and-drop upload feature. Its contents are irrelevant beyond being
+plain text.
