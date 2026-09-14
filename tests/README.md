@@ -103,6 +103,11 @@ for traces — `trace: 'retain-on-failure'` on the `e2e` project) and are handy
 for debugging a failing run after the fact, alongside
 `localstorage.json`/`sessionstorage.json` from that run's sign-in.
 
+`tests/proof/` holds the rare screenshot that is *committed*, as proof a
+behaviour was really observed in a signed-in session —
+`NAV-001-up-button.png` is the toolbar's `↑ Up` button asserted by
+`04-navigation.spec.ts`, taken from that spec's own passing run.
+
 ## Exploring a signed-in session with `playwright-cli`
 
 `tests/explorative/authenticatedBrowserSession.ts` is a small
