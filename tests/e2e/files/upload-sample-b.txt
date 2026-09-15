@@ -1,0 +1,3 @@
+EverOne e2e upload sample B.
+
+Second file of the multi-file drop in 05-upload.spec.ts.

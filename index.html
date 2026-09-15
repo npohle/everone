@@ -44,6 +44,7 @@
           <option value="size-desc">Size (largest)</option>
           <option value="size-asc">Size (smallest)</option>
         </select>
+        <span class="drop-hint">Drag files onto a folder to upload them</span>
         <span id="status" class="status"></span>
       </div>
       <div class="split">
@@ -70,7 +71,7 @@
     </section>
   </main>
 
-  <div id="toast" class="toast" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="./app.js"></script>
 </body>

@@ -97,6 +97,13 @@ signed in, without repeating any of that:
   signed-out context, same as this fixture behaves for any other missing-state
   case.
 
+`05-upload.spec.ts` drags files onto a folder row: real drag-and-drop from
+the desktop can't be automated, so it builds a `DataTransfer` holding `File`
+objects in the page and dispatches `dragenter`/`dragover`/`drop` on the row.
+The file contents come from `tests/e2e/files/*.txt`, uploaded under a random
+`e2e-upload-…` name per run. The app has no delete, so those uploads stay in
+the test account's drive.
+
 Screenshots land in `tests/artefacts/<RUN_ID>/` (gitignored, `RUN_ID` is set
 by the `test:e2e` npm script and also used as Playwright's own `outputDir`
 for traces — `trace: 'retain-on-failure'` on the `e2e` project) and are handy

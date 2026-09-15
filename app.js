@@ -35,11 +35,17 @@ const state = {
   selectedId: null,
 };
 
-function showToast(msg) {
+// `type` picks the toast colour (error is the default, matching every
+// pre-existing call site); `timeout: 0` keeps it up until the next toast
+// replaces it, which is what in-progress uploads use.
+function showToast(msg, { type = "error", timeout = 4000 } = {}) {
   els.toast.textContent = msg;
+  els.toast.className = `toast ${type}`;
   els.toast.hidden = false;
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => { els.toast.hidden = true; }, 4000);
+  if (timeout > 0) {
+    showToast._t = setTimeout(() => { els.toast.hidden = true; }, timeout);
+  }
 }
 
 function formatBytes(n) {
@@ -137,7 +143,8 @@ function renderListing() {
 
   for (const item of sorted) {
     const li = document.createElement("li");
-    li.className = "row" + (item.id === state.selectedId ? " selected" : "");
+    li.className = "row" + (item.folder ? " folder" : "") +
+      (item.id === state.selectedId ? " selected" : "");
     li.dataset.id = item.id;
     li.innerHTML = `
       <span class="icon">${fileIcon(item)}</span>
@@ -150,8 +157,88 @@ function renderListing() {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onItemClick(item); }
     });
     li.tabIndex = 0;
+    if (item.folder) initFolderDropTarget(li, item);
     els.listing.appendChild(li);
   }
+}
+
+// A drag carries files when its DataTransfer advertises the "Files" type.
+// `files` itself is only readable on drop (protected mode during dragover), so
+// both are checked to keep the drop path working even without the type hint.
+function dragHasFiles(e) {
+  const dt = e.dataTransfer;
+  if (!dt) return false;
+  return Array.from(dt.types || []).includes("Files") || (dt.files && dt.files.length > 0);
+}
+
+// Makes a folder row accept dropped files and upload them into that folder.
+function initFolderDropTarget(li, folder) {
+  li.title = `Drop files here to upload them into “${folder.name}”`;
+  const highlight = (on) => li.classList.toggle("drop-target", on);
+
+  li.addEventListener("dragover", (e) => {
+    if (!dragHasFiles(e)) return;
+    // Without preventDefault the browser refuses the drop and opens the file.
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    highlight(true);
+  });
+  li.addEventListener("dragleave", (e) => {
+    // Moving between the row's own children fires dragleave too; ignore those.
+    if (li.contains(e.relatedTarget)) return;
+    highlight(false);
+  });
+  li.addEventListener("drop", (e) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    highlight(false);
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length > 0) uploadFiles(folder, files);
+  });
+}
+
+function quoted(name) {
+  return `\u201c${name}\u201d`;
+}
+
+function uploadErrorText(err) {
+  if (err && (err.code === "nameAlreadyExists" || err.status === 409)) {
+    return "a file with that name already exists";
+  }
+  return (err && err.message) || "upload failed";
+}
+
+// Uploads dropped files one after another (sequential keeps the progress toast
+// truthful and avoids hammering Graph), then reports the outcome.
+async function uploadFiles(folder, files) {
+  const label = files.length === 1 ? quoted(files[0].name) : `${files.length} files`;
+  showToast(`Uploading ${label} to ${quoted(folder.name)}\u2026`, { type: "info", timeout: 0 });
+
+  const failures = [];
+  let uploaded = 0;
+  for (const file of files) {
+    try {
+      await graph.uploadFile(folder.id, file);
+      uploaded++;
+    } catch (err) {
+      failures.push(`${file.name}: ${uploadErrorText(err)}`);
+    }
+  }
+
+  if (failures.length === 0) {
+    showToast(`Uploaded ${label} to ${quoted(folder.name)}`, { type: "success", timeout: 6000 });
+  } else if (uploaded === 0) {
+    showToast(`Upload to ${quoted(folder.name)} failed \u2014 ${failures.join("; ")}`, { timeout: 8000 });
+  } else {
+    showToast(
+      `Uploaded ${uploaded} of ${files.length} files to ${quoted(folder.name)} \u2014 ${failures.join("; ")}`,
+      { timeout: 8000 },
+    );
+  }
+
+  // The drop target is a child of the current listing, so refresh it to pick up
+  // the folder's new size/modified date.
+  if (uploaded > 0 && !state.searchQuery) loadCurrent();
 }
 
 function renderBreadcrumbs() {
@@ -369,6 +456,24 @@ function wireEvents() {
   }, 300));
   initListingKeyboard();
   initSplitDivider();
+  initPageDropGuard();
+}
+
+// A file dropped anywhere but on a folder row would otherwise make the browser
+// navigate away from the app. Swallow those drops and say what to do instead.
+function initPageDropGuard() {
+  document.addEventListener("dragover", (e) => {
+    if (dragHasFiles(e)) e.preventDefault();
+  });
+  document.addEventListener("drop", (e) => {
+    if (!dragHasFiles(e)) return;
+    // A folder row's own handler already called preventDefault on this event.
+    const handledByFolder = e.defaultPrevented;
+    e.preventDefault();
+    if (!handledByFolder) {
+      showToast("Drop files onto a folder to upload them.", { type: "info" });
+    }
+  });
 }
 
 function initListingKeyboard() {
