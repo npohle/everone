@@ -6,6 +6,8 @@ import {
 } from '@playwright/test';
 import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
+import { APP_HOST, browserLaunchOptions } from './lib/browser.ts';
+import { readCaddyState } from './lib/caddy.ts';
 
 type Fixtures = {
   browser: Browser;
@@ -13,23 +15,19 @@ type Fixtures = {
 };
 
 export const test = base.extend<Fixtures>({
-  browser: async ({}, use) => {
-    
-    const { port } = JSON.parse(
-      readFileSync(
-        path.join(String(process.env.ARTEFACTS_DIR), '.caddy-server-state.json'),
-        'utf8',
-      ),
-    );
+  // `headless`, `launchOptions` and `ignoreHTTPSErrors` are Playwright's own
+  // options: they come from playwright.config.ts's `use`, and `headless` also
+  // honours the `--headed` command line flag, so a run can be watched without
+  // editing this file.
+  browser: async ({ headless, launchOptions }, use) => {
 
-    console.log(`Launching browser with host resolver rules to map npohle.github.io to 127.0.0.1:${port}`);
+    const { port } = readCaddyState(String(process.env.ARTEFACTS_DIR));
+
+    console.log(`Launching ${headless ? 'headless ' : ''}browser with host resolver rules to map ${APP_HOST} to 127.0.0.1:${port}`);
 
     const browser = await chromium.launch({
-      headless: false,
-
-      args: [
-        `--host-resolver-rules=MAP npohle.github.io 127.0.0.1:${port}`,
-      ],
+      ...browserLaunchOptions(port, launchOptions),
+      headless,
     });
 
 
@@ -39,7 +37,7 @@ export const test = base.extend<Fixtures>({
     await browser.close();
   },
 
-  context: async ({ browser }, use) => {
+  context: async ({ browser, ignoreHTTPSErrors }, use) => {
 
     console.log(`Creating a brand new context`);
 
@@ -56,7 +54,7 @@ export const test = base.extend<Fixtures>({
       console.log(`Using localstorage.json file from ${localstorageFile}`);
     }
 
-    const context = await browser.newContext({ storageState: localstorageState });
+    const context = await browser.newContext({ storageState: localstorageState, ignoreHTTPSErrors });
 
     const sessionStorageFile = path.join(String(process.env.ARTEFACTS_DIR), 'sessionstorage.json');
     const sessionStorage: Array<{ name: string; value: string }> = existsSync(sessionStorageFile)

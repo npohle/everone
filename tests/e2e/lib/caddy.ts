@@ -80,6 +80,20 @@ function stateFilePath(artefactsDir: string): string {
 export type CaddyState = { pid: number; port: number };
 
 /**
+ * The { pid, port } startCaddy() persisted for this run, for a later, separate
+ * process (the test workers, globalTeardown) to find the running instance.
+ */
+export function readCaddyState(artefactsDir: string): CaddyState {
+  const file = stateFilePath(artefactsDir);
+  if (!fs.existsSync(file)) {
+    throw new Error(
+      `No Caddy state at ${file} — globalSetup starts Caddy for a run, so run the suite via 'npm run test:e2e' (or 'npx playwright test' with RUN_ID set).`,
+    );
+  }
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+/**
  * Starts Caddy detached (survives the launching process exiting), serving
  * the repo root under /<basePath>/*, bound to `host`. Persists { pid, port }
  * to <artefactsDir>/.caddy-server-state.json so a later, separate process
@@ -128,7 +142,7 @@ export async function startCaddy(
 export function stopCaddy(artefactsDir: string): void {
   const file = stateFilePath(artefactsDir);
   if (!fs.existsSync(file)) return;
-  const state: CaddyState = JSON.parse(fs.readFileSync(file, "utf8"));
+  const state = readCaddyState(artefactsDir);
   console.log(`Stopping Caddy file server (pid ${state.pid})`);
   try {
     process.kill(state.pid);
