@@ -87,7 +87,9 @@ signed in, without repeating any of that:
 * A custom `browser` fixture (worker-scoped, so it launches once and is
   shared across all tests in the run) reads Caddy's port from
   `.caddy-server-state.json` and launches Chromium with the matching
-  `--host-resolver-rules`.
+  `--host-resolver-rules`, on top of Playwright's own `headless` /
+  `launchOptions` — so `npx playwright test --headed` still works, and extra
+  launch args configured in `playwright.config.ts` are preserved.
 * A custom `context` fixture (one per test, Playwright's normal default)
   loads `localstorage.json` into `newContext({ storageState })`, then replays
   `sessionstorage.json` via `context.addInitScript(...)` — an init script
@@ -95,7 +97,11 @@ signed in, without repeating any of that:
   what's needed since sessionStorage isn't part of `storageState` at all.
   Both files being absent (the `auth` project's own first run) just yields a
   signed-out context, same as this fixture behaves for any other missing-state
-  case.
+  case. The context is created with `ignoreHTTPSErrors` (set in
+  `playwright.config.ts`'s `use`): Caddy's `tls internal` CA is only trusted
+  after being installed into the system trust store, which needs root, so
+  without this every `page.goto` fails with `ERR_CERT_AUTHORITY_INVALID`.
+  Only this loopback-bound test server is affected.
 
 Screenshots land in `tests/artefacts/<RUN_ID>/` (gitignored, `RUN_ID` is set
 by the `test:e2e` npm script and also used as Playwright's own `outputDir`

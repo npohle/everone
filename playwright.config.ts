@@ -16,6 +16,13 @@ export default defineConfig({
   globalSetup: './tests/e2e/global-setup.ts',
   globalTeardown: './tests/e2e/global-teardown.ts',
 
+  // Caddy serves the app over its own internal CA (see tests/e2e/lib/caddy.ts),
+  // which isn't in any trust store — without this every page.goto fails with
+  // ERR_CERT_AUTHORITY_INVALID.
+  use: {
+    ignoreHTTPSErrors: true,
+  },
+
   projects: [
     {
       name: 'auth',
