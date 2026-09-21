@@ -13,7 +13,7 @@ type Fixtures = {
 };
 
 export const test = base.extend<Fixtures>({
-  browser: async ({}, use) => {
+  browser: async ({ headless, launchOptions }, use) => {
     
     const { port } = JSON.parse(
       readFileSync(
@@ -24,10 +24,15 @@ export const test = base.extend<Fixtures>({
 
     console.log(`Launching browser with host resolver rules to map npohle.github.io to 127.0.0.1:${port}`);
 
+    // Take headless / launch args from Playwright's own options rather than
+    // hardcoding them, so `--headed` (and anything set under `use` in
+    // playwright.config.ts) works here like it does for the built-in fixture.
     const browser = await chromium.launch({
-      headless: true,
+      ...launchOptions,
+      headless,
 
       args: [
+        ...(launchOptions.args ?? []),
         `--host-resolver-rules=MAP npohle.github.io 127.0.0.1:${port}`,
       ],
     });
@@ -39,7 +44,7 @@ export const test = base.extend<Fixtures>({
     await browser.close();
   },
 
-  context: async ({ browser }, use) => {
+  context: async ({ browser, ignoreHTTPSErrors }, use) => {
 
     console.log(`Creating a brand new context`);
 
@@ -56,7 +61,15 @@ export const test = base.extend<Fixtures>({
       console.log(`Using localstorage.json file from ${localstorageFile}`);
     }
 
-    const context = await browser.newContext({ storageState: localstorageState });
+    // Caddy serves the app with `tls internal`, whose CA is not in the
+    // browser's trust store, so without this every page.goto() fails with
+    // ERR_CERT_AUTHORITY_INVALID. This has to be passed through explicitly:
+    // this fixture replaces Playwright's built-in `context`, so `use` options
+    // from playwright.config.ts never reach newContext() on their own.
+    const context = await browser.newContext({
+      storageState: localstorageState,
+      ignoreHTTPSErrors,
+    });
 
     const sessionStorageFile = path.join(String(process.env.ARTEFACTS_DIR), 'sessionstorage.json');
     const sessionStorage: Array<{ name: string; value: string }> = existsSync(sessionStorageFile)
