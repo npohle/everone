@@ -16,6 +16,13 @@ export default defineConfig({
   globalSetup: './tests/e2e/global-setup.ts',
   globalTeardown: './tests/e2e/global-teardown.ts',
 
+  use: {
+    // Caddy serves the app over `tls internal`, a CA that isn't in the
+    // browser's trust store. tests/e2e/fixtures.ts reads this option and
+    // passes it to browser.newContext() by hand.
+    ignoreHTTPSErrors: true,
+  },
+
   projects: [
     {
       name: 'auth',
