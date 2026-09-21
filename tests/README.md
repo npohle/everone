@@ -26,6 +26,10 @@ TEST_PASSWORD=...
 TEST_TOTP_SEED=...   # base32 secret shared with the authenticator app
 ```
 
+`dotenv.config()` does not overwrite variables that are already set, so an
+environment that exports these itself (a CI runner, a container) needs no
+`.env` at all.
+
 ## Running the suite
 
 ```bash
@@ -34,6 +38,19 @@ npm run test:e2e
 
 Run a single spec file the same way Playwright normally supports:
 `npx playwright test 02-search.spec.ts`.
+
+Browsers run **headless** by default, so the suite works over SSH, in CI and
+in containers with no X server. To watch a run, pass Playwright's usual flag
+through the npm script:
+
+```bash
+npm run test:e2e -- --headed
+```
+
+Caddy serves the app under `tls internal`, whose CA is only trusted on
+machines where `caddy trust` has been run (which needs root). Rather than
+require that, `playwright.config.ts` sets `use.ignoreHTTPSErrors: true` — the
+suite only ever talks to that local Caddy and to Microsoft's real endpoints.
 
 ## How it's wired
 
@@ -86,10 +103,15 @@ signed in, without repeating any of that:
 
 * A custom `browser` fixture (worker-scoped, so it launches once and is
   shared across all tests in the run) reads Caddy's port from
-  `.caddy-server-state.json` and launches Chromium with the matching
-  `--host-resolver-rules`.
+  `.caddy-server-state.json` (`readCaddyState`) and launches Chromium with
+  the matching `--host-resolver-rules` (`lib/browser.ts`'s
+  `browserLaunchOptions`, which appends the rule to whatever
+  `use.launchOptions` the config sets). It depends on Playwright's own
+  `headless` option fixture rather than hard-coding a value, so `--headed`
+  works the way it does in any other Playwright project.
 * A custom `context` fixture (one per test, Playwright's normal default)
-  loads `localstorage.json` into `newContext({ storageState })`, then replays
+  loads `localstorage.json` into `newContext({ storageState })`, passes
+  through the `ignoreHTTPSErrors` option (for Caddy's internal CA), then replays
   `sessionstorage.json` via `context.addInitScript(...)` — an init script
   runs before any page script on every navigation in that context, which is
   what's needed since sessionStorage isn't part of `storageState` at all.
@@ -146,9 +168,15 @@ newest `tests/artefacts/` directory.
 Caddy for that run; omit `runid` to close the most recently *created*
 `tests/artefacts/` run.
 
+## Unit tests
+
+`npm run test:unit` (`node --test`, no extra dependencies) covers the pure
+helpers behind the suite's plumbing: `tests/unit/browser.test.js` for
+`tests/e2e/lib/browser.ts`'s launch options, `tests/unit/caddy.test.js` for
+`readCaddyState`. `npm test` runs these and then the e2e suite.
+
 ## Known gaps
 
-* `npm run test:unit` currently has no tests under `tests/unit/` to run.
 * `.gitignore`'s `playwright/.auth/` entry is vestigial — sign-in state is
   written to `localstorage.json`/`sessionstorage.json` in the artefacts
   directory, not `playwright/.auth/`.

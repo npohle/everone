@@ -5,6 +5,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "
 import path from "node:path";
 import pc from 'picocolors';
 import { startCaddy, stopCaddy } from "../e2e/lib/caddy.ts";
+import { hostResolverRule } from "../e2e/lib/browser.ts";
 
 const ARTEFACTS_DIR = "tests/artefacts";
 
@@ -96,7 +97,7 @@ program
         writeFileSync(playwrightCliConfigFile, JSON.stringify({
           browser: {
             launchOptions: {
-              args: [`--host-resolver-rules=MAP npohle.github.io 127.0.0.1:${port}`],
+              args: [hostResolverRule(port)],
             },
           },
         }));

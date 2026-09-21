@@ -16,6 +16,14 @@ export default defineConfig({
   globalSetup: './tests/e2e/global-setup.ts',
   globalTeardown: './tests/e2e/global-teardown.ts',
 
+  use: {
+    // Caddy serves the app under `tls internal`, whose CA is only trusted on
+    // machines where `caddy trust` has been run (it needs root). The suite
+    // only ever talks to that local Caddy and to Microsoft's real endpoints,
+    // so accept it rather than requiring root to run the tests.
+    ignoreHTTPSErrors: true,
+  },
+
   projects: [
     {
       name: 'auth',

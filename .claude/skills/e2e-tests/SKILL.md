@@ -33,9 +33,13 @@ Run a single spec file the normal Playwright way:
 npx playwright test 02-search.spec.ts
 ```
 
-Requires `.env` at the repo root with `TEST_USERNAME`, `TEST_PASSWORD`,
-`TEST_TOTP_SEED` (already set up in this repo — never print or log these
-values) plus `caddy` and `oathtool` installed locally; see
+Browsers run headless by default, so this works with no X server (CI, a
+container, over SSH); add `-- --headed` to watch a run.
+
+Requires `TEST_USERNAME`, `TEST_PASSWORD`, `TEST_TOTP_SEED` — either already
+in the environment, or in a `.env` at the repo root (already set up in this
+repo — never print or log these values) — plus `caddy` and `oathtool`
+installed locally; see
 [tests/README.md](../../../tests/README.md) for full setup details if a run
 fails for environment reasons.
 
