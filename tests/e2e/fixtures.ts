@@ -13,7 +13,7 @@ type Fixtures = {
 };
 
 export const test = base.extend<Fixtures>({
-  browser: async ({}, use) => {
+  browser: async ({ headless, launchOptions }, use) => {
     
     const { port } = JSON.parse(
       readFileSync(
@@ -24,10 +24,14 @@ export const test = base.extend<Fixtures>({
 
     console.log(`Launching browser with host resolver rules to map npohle.github.io to 127.0.0.1:${port}`);
 
+    // Take headless/args from Playwright's own options rather than hardcoding
+    // them, so `--headed` works and config-level launch args are kept.
     const browser = await chromium.launch({
-      headless: true,
+      ...launchOptions,
+      headless,
 
       args: [
+        ...(launchOptions.args ?? []),
         `--host-resolver-rules=MAP npohle.github.io 127.0.0.1:${port}`,
       ],
     });
@@ -39,7 +43,7 @@ export const test = base.extend<Fixtures>({
     await browser.close();
   },
 
-  context: async ({ browser }, use) => {
+  context: async ({ browser, ignoreHTTPSErrors }, use) => {
 
     console.log(`Creating a brand new context`);
 
@@ -56,7 +60,11 @@ export const test = base.extend<Fixtures>({
       console.log(`Using localstorage.json file from ${localstorageFile}`);
     }
 
-    const context = await browser.newContext({ storageState: localstorageState });
+    // Caddy serves the repo over `tls internal`, whose CA is only trusted once
+    // it's installed into the system trust store — something a plain checkout
+    // (or a CI container without root) can't rely on. The config sets
+    // ignoreHTTPSErrors so this local, loopback-only server just works.
+    const context = await browser.newContext({ storageState: localstorageState, ignoreHTTPSErrors });
 
     const sessionStorageFile = path.join(String(process.env.ARTEFACTS_DIR), 'sessionstorage.json');
     const sessionStorage: Array<{ name: string; value: string }> = existsSync(sessionStorageFile)
