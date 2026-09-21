@@ -1,0 +1,7 @@
+:8081 {
+    root * /workspace
+    file_server {
+        browse
+        index ""
+    }
+}

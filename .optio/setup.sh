@@ -1,1 +1,1 @@
-caddy file-server --root /workspace --listen 127.0.0.1:8081 --browse &
+caddy start --config /workspace/.optio/Caddyfile
