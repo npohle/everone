@@ -1,1 +1,1 @@
-caddy start --config /workspace/.optio/Caddyfile
+caddy start --config .optio/Caddyfile
