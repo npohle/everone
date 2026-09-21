@@ -25,7 +25,7 @@ export const test = base.extend<Fixtures>({
     console.log(`Launching browser with host resolver rules to map npohle.github.io to 127.0.0.1:${port}`);
 
     const browser = await chromium.launch({
-      headless: false,
+      headless: true,
 
       args: [
         `--host-resolver-rules=MAP npohle.github.io 127.0.0.1:${port}`,
