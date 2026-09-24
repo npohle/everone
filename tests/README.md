@@ -68,8 +68,15 @@ every other spec — its own `page` starts out signed out (no
 * Drives the real Microsoft popup sign-in flow — `auth.js` calls MSAL's
   `loginPopup()`, so the whole flow happens in a separate popup window, not
   in the main page. Username → password → TOTP code (via `oathtool`) →
-  "Stay signed in?", with a branch for Microsoft's occasional passkey-
-  enrollment interrupt and for first-time consent.
+  "Stay signed in?", plus a branch for first-time consent.
+* Between the TOTP step and "Stay signed in?", Microsoft can wedge in one or
+  more interrupt pages, and which ones appear varies per run and per account
+  state. `clearSignInInterrupts` clears them in a loop against the `INTERRUPTS`
+  list — currently the passkey-enrolment offer (creation can't succeed in an
+  automated context) and the "We're updating our terms" Services Agreement
+  notice. When sign-in stalls on a page that isn't in that list, the setup
+  fails with the popup's URL and a full-page `00-03-unexpected.png` screenshot
+  in the artefacts directory; add the new page to `INTERRUPTS` from there.
 * Once the app has loaded, captures the resulting sign-in state to two files
   in the artefacts directory:
   * `localstorage.json` — `page.context().storageState()` (cookies +
