@@ -1,4 +1,5 @@
 import { test as setup, expect } from './fixtures.ts'
+import type { Locator, Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import path from "node:path";
@@ -29,24 +30,17 @@ setup('authenticate', async ({ page }) => {
     await popup.getByLabel("Code").fill(code);
     await popup.getByRole("button", { name: "Next" }).click();
   
-    const staySignedIn = await popup.getByText("Stay signed in?").waitFor({timeout: 5_000}).then(() => true).catch(() => false);
-    if (!staySignedIn) {
-        // Microsoft sometimes tries to auto-enroll a passkey right here — creation
-        // fails in an automated/headless context (no platform authenticator), which
-        // lands on an interrupt page instead of going straight to "Stay signed in?".
-        console.log("Passkey enrollment prompt detected, cancelling it.");
-        const passkeyPrompt = await popup
-        .getByText(/passkey/i)
-        .first()
-        .waitFor({ timeout: 5_000 })
-        .then(() => true)
-        .catch(() => false);
-        if (passkeyPrompt) {
-            await popup.getByRole("button", { name: /^(cancel|skip.*)$/i }).click();
-        }        
-    }
-    
-    await popup.getByText("Stay signed in?").waitFor({timeout: 15_000});
+    await clearSignInInterrupts(popup);
+
+    await popup.getByText("Stay signed in?").waitFor({timeout: 15_000}).catch(async () => {
+        // Whatever Microsoft put in the way this time isn't in INTERRUPTS yet —
+        // capture it so the next person doesn't have to reproduce it blind.
+        await popup.screenshot({ path: path.join(process.env.ARTEFACTS_DIR!, "00-03-unexpected.png"), fullPage: true });
+        throw new Error(
+            `Sign-in stalled on an unhandled page (${popup.url()}) instead of reaching "Stay signed in?" — ` +
+            `see ${process.env.ARTEFACTS_DIR!}/00-03-unexpected.png`,
+        );
+    });
     await popup.screenshot({ path: path.join(process.env.ARTEFACTS_DIR!, "00-03-stay.png") });
     await popup.getByRole("button", { name: "No" }).click();
 
@@ -95,6 +89,60 @@ setup('authenticate', async ({ page }) => {
     
 
 });
+
+
+
+/**
+ * Pages Microsoft can wedge between the TOTP challenge and "Stay signed in?".
+ * Which ones show up varies per run and per account state, and they chain, so
+ * they're handled as a list rather than as a fixed sequence of steps.
+ */
+const INTERRUPTS: Array<{ slug: string; description: string; probe: (popup: Page) => Locator; dismiss: (popup: Page) => Promise<void> }> = [
+  {
+    slug: "terms",
+    description: "Microsoft Services Agreement update notice",
+    probe: (popup) => popup.getByRole("heading", { name: /updating our terms/i }),
+    dismiss: async (popup) => { await popup.getByRole("button", { name: "Next" }).click(); },
+  },
+  {
+    slug: "passkey",
+    // Passkey creation fails in an automated/headless context (no platform
+    // authenticator), so accepting the offer would dead-end the flow.
+    description: "passkey enrolment offer",
+    probe: (popup) => popup.getByText(/passkey/i).first(),
+    dismiss: async (popup) => { await popup.getByRole("button", { name: /^(cancel|skip.*)$/i }).click(); },
+  },
+];
+
+/** Clear interrupt pages until the sign-in flow reaches "Stay signed in?". */
+export async function clearSignInInterrupts(popup: Page, timeoutMs = 45_000) {
+    const staySignedIn = popup.getByText("Stay signed in?").first();
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+        // A popup that closed itself has nothing left to interrupt us with.
+        if (popup.isClosed()) return;
+        if (await staySignedIn.isVisible().catch(() => false)) return;
+
+        const interrupt = await firstVisible(popup, INTERRUPTS);
+        if (!interrupt) {
+            await sleep(500);
+            continue;
+        }
+
+        console.log(`Sign-in interrupt detected (${interrupt.description}), dismissing it.`);
+        await popup.screenshot({ path: path.join(process.env.ARTEFACTS_DIR!, `00-02-interrupt-${interrupt.slug}.png`) });
+        await interrupt.dismiss(popup);
+        await popup.waitForLoadState("domcontentloaded").catch(() => {});
+    }
+}
+
+async function firstVisible<T extends { probe: (popup: Page) => Locator }>(popup: Page, candidates: T[]) {
+    for (const candidate of candidates) {
+        if (await candidate.probe(popup).isVisible().catch(() => false)) return candidate;
+    }
+    return undefined;
+}
 
 
 export const TOTP_PERIOD_MS = 30_000;
