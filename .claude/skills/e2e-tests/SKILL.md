@@ -51,7 +51,8 @@ Each run gets its own folder, `tests/artefacts/<RUN_ID>/` (gitignored), where
   debugging a failing run with `npx playwright show-trace`.
 
 After a run, find the newest directory under `tests/artefacts/` to inspect
-what happened.
+what happened. This is being served under http://ubuntu-nbg1-1.tailab4759.ts.net:8081/{HOSTNAME}/tasks/ 
+where the HOSTNAME should be substituted by the output of the bash command hostname 
 
 ## Writing a new spec
 
