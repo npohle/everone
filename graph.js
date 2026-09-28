@@ -13,8 +13,17 @@ async function graphFetch(url, init = {}) {
   });
   if (!res.ok) {
     let detail = "";
-    try { detail = (await res.json()).error?.message || ""; } catch {}
-    throw new Error(`Graph ${res.status}: ${detail || res.statusText}`);
+    let body = null;
+    try {
+      const text = await res.text();
+      try { body = JSON.parse(text); } catch { body = text || null; }
+      detail = body?.error?.message || "";
+    } catch {}
+    const err = new Error(`Graph ${res.status}: ${detail || res.statusText}`);
+    // Keep the raw response so callers can surface the full error payload.
+    err.status = res.status;
+    err.body = body;
+    throw err;
   }
   return res;
 }
@@ -72,6 +81,23 @@ export async function search(query, sort) {
   const q = encodeURIComponent(query);
   const url = `${config.graphBase}/me/drive/root/search(q='${q}')?$top=${config.pageSize}&$select=${SELECT}${orderByParam(sort)}`;
   return graphJson(url);
+}
+
+// Creates a subfolder under the given folder (root when itemId is null).
+// Fails with 409 rather than renaming if the name is already taken.
+export async function createFolder(itemId, name) {
+  const path = itemId
+    ? `/me/drive/items/${encodeURIComponent(itemId)}/children`
+    : `/me/drive/root/children`;
+  return graphJson(`${config.graphBase}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      folder: {},
+      "@microsoft.graph.conflictBehavior": "fail",
+    }),
+  });
 }
 
 // Returns a short-lived embeddable URL for Office docs and PDFs.

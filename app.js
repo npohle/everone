@@ -19,6 +19,13 @@ const els = {
   search: document.getElementById("search"),
   breadcrumbs: document.getElementById("breadcrumbs"),
   toast: document.getElementById("toast"),
+  newFolderBtn: document.getElementById("new-folder-btn"),
+  newFolderDialog: document.getElementById("new-folder-dialog"),
+  newFolderForm: document.getElementById("new-folder-form"),
+  newFolderPath: document.getElementById("new-folder-path"),
+  newFolderName: document.getElementById("new-folder-name"),
+  newFolderCancel: document.getElementById("new-folder-cancel"),
+  newFolderCreate: document.getElementById("new-folder-create"),
 };
 
 const state = {
@@ -35,11 +42,11 @@ const state = {
   selectedId: null,
 };
 
-function showToast(msg) {
+function showToast(msg, ms = 4000) {
   els.toast.textContent = msg;
   els.toast.hidden = false;
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => { els.toast.hidden = true; }, 4000);
+  showToast._t = setTimeout(() => { els.toast.hidden = true; }, ms);
 }
 
 function formatBytes(n) {
@@ -290,6 +297,40 @@ async function runSearch(query) {
   }
 }
 
+function currentPath() {
+  return ["OneDrive", ...state.stack.map((f) => f.name)].join(" / ");
+}
+
+function openNewFolderDialog() {
+  els.newFolderPath.textContent = currentPath();
+  els.newFolderName.value = "";
+  els.newFolderCreate.disabled = false;
+  els.newFolderDialog.showModal();
+  els.newFolderName.focus();
+}
+
+async function createFolder(e) {
+  e.preventDefault();
+  const name = els.newFolderName.value.trim();
+  if (!name) return;
+  const folder = state.stack[state.stack.length - 1];
+  els.newFolderCreate.disabled = true;
+  try {
+    await graph.createFolder(folder ? folder.id : null, name);
+    els.newFolderDialog.close();
+    await loadCurrent();
+  } catch (err) {
+    // Close first: the modal sits in the top layer and would cover the toast.
+    els.newFolderDialog.close();
+    const dump = err.body == null
+      ? ""
+      : "\n" + (typeof err.body === "string" ? err.body : JSON.stringify(err.body, null, 2));
+    showToast(`Failed to create folder "${name}": ${err.message || err}${dump}`, 15000);
+  } finally {
+    els.newFolderCreate.disabled = false;
+  }
+}
+
 function debounce(fn, ms) {
   let t;
   return (...args) => {
@@ -359,6 +400,9 @@ function wireEvents() {
     else loadCurrent();
   });
   els.loadMore.addEventListener("click", loadMore);
+  els.newFolderBtn.addEventListener("click", openNewFolderDialog);
+  els.newFolderForm.addEventListener("submit", createFolder);
+  els.newFolderCancel.addEventListener("click", () => els.newFolderDialog.close());
   els.search.addEventListener("input", debounce((e) => {
     const q = e.target.value.trim();
     if (q.length === 0) {

@@ -1,0 +1,12 @@
+{
+  "name": "onedrive-browser",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "node e2e/serve.js",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "~1.62.0"
+  }
+}

@@ -9,8 +9,8 @@
 //      the page URL exactly, including trailing slash.
 //   4. After creation, copy the "Application (client) ID" into clientId below.
 //   5. Under "API permissions" the default delegated `User.Read` is enough; the
-//      app also requests `Files.Read` and `Files.Read.All` which users consent to
-//      on first sign-in. No admin consent is required for personal accounts.
+//      app also requests `Files.ReadWrite` (needed to create folders) and
+//      `Files.Read.All` which users consent to on first sign-in. No admin consent is required for personal accounts.
 //   6. Host the contents of this directory as static files (any web server, GitHub
 //      Pages, Azure Static Web Apps, S3 + CloudFront, Netlify, etc.).
 //
@@ -19,7 +19,7 @@
 export const config = {
   clientId: "95e0df7d-45cf-4b50-a726-d9a57993db01",
   authority: "https://login.microsoftonline.com/consumers",
-  scopes: ["User.Read", "Files.Read", "Files.Read.All"],
+  scopes: ["User.Read", "Files.ReadWrite", "Files.Read.All"],
   graphBase: "https://graph.microsoft.com/v1.0",
   pageSize: 100,
 };
