@@ -51,8 +51,21 @@ Each run gets its own folder, `tests/artefacts/<RUN_ID>/` (gitignored), where
   debugging a failing run with `npx playwright show-trace`.
 
 After a run, find the newest directory under `tests/artefacts/` to inspect
-what happened. This is being served under http://ubuntu-nbg1-1.tailab4759.ts.net:8081/{HOSTNAME}/tasks/ 
-where the HOSTNAME should be substituted by the output of the bash command hostname 
+what happened.
+
+## Browsing artefacts on the web
+
+Every machine that runs this suite also mirrors its `tests/artefacts/`
+directory to an internal dashboard, so artefacts can be browsed from a phone
+or another machine without needing shell access to the box that ran the
+tests. The dashboard URL is:
+
+http://ubuntu-nbg1-1.tailab4759.ts.net:8081/<hostname>/tasks/
+
+where `<hostname>` is this machine's own hostname (the output of running
+`hostname` locally). After running the suite, work out this run's URL and
+include it in your summary to the user — there's no need to open or fetch
+it yourself.
 
 ## Writing a new spec
 
