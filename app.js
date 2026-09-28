@@ -19,6 +19,13 @@ const els = {
   search: document.getElementById("search"),
   breadcrumbs: document.getElementById("breadcrumbs"),
   toast: document.getElementById("toast"),
+  newFolderBtn: document.getElementById("new-folder-btn"),
+  newFolderDialog: document.getElementById("new-folder-dialog"),
+  newFolderForm: document.getElementById("new-folder-form"),
+  newFolderPath: document.getElementById("new-folder-path"),
+  newFolderName: document.getElementById("new-folder-name"),
+  newFolderCancel: document.getElementById("new-folder-cancel"),
+  newFolderCreate: document.getElementById("new-folder-create"),
 };
 
 const state = {
@@ -35,11 +42,21 @@ const state = {
   selectedId: null,
 };
 
-function showToast(msg) {
+function showToast(msg, ms = 4000) {
   els.toast.textContent = msg;
   els.toast.hidden = false;
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => { els.toast.hidden = true; }, 4000);
+  showToast._t = setTimeout(() => { els.toast.hidden = true; }, ms);
+}
+
+// Pretty-prints the raw Graph error body (see graph.js) when it's JSON.
+function errorDump(err) {
+  if (!err.body) return err.message || String(err);
+  try {
+    return `${err.message}\n${JSON.stringify(JSON.parse(err.body), null, 2)}`;
+  } catch {
+    return `${err.message}\n${err.body}`;
+  }
 }
 
 function formatBytes(n) {
@@ -184,6 +201,36 @@ function renderBreadcrumbs() {
 
 function setStatus(text) {
   els.status.textContent = text;
+}
+
+function currentFolderPath() {
+  return "/" + state.stack.map((f) => f.name).join("/");
+}
+
+function openNewFolderDialog() {
+  els.newFolderPath.textContent = currentFolderPath();
+  els.newFolderName.value = "";
+  els.newFolderCreate.disabled = false;
+  els.newFolderDialog.showModal();
+  els.newFolderName.focus();
+}
+
+async function createFolder() {
+  const name = els.newFolderName.value.trim();
+  if (!name) return;
+  const folder = state.stack[state.stack.length - 1];
+  els.newFolderCreate.disabled = true;
+  try {
+    await graph.createFolder(folder ? folder.id : null, name);
+  } catch (err) {
+    // Close first: a modal <dialog> sits in the top layer and would cover
+    // the toast behind its backdrop.
+    els.newFolderDialog.close();
+    showToast(`Failed to create folder "${name}":\n${errorDump(err)}`, 15000);
+    return;
+  }
+  els.newFolderDialog.close();
+  await loadCurrent();
 }
 
 function onItemClick(item) {
@@ -357,6 +404,12 @@ function wireEvents() {
     // through the @odata.nextLink for subsequent pages.
     if (state.searchQuery) runSearch(state.searchQuery);
     else loadCurrent();
+  });
+  els.newFolderBtn.addEventListener("click", openNewFolderDialog);
+  els.newFolderCancel.addEventListener("click", () => els.newFolderDialog.close());
+  els.newFolderForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    createFolder();
   });
   els.loadMore.addEventListener("click", loadMore);
   els.search.addEventListener("input", debounce((e) => {

@@ -36,6 +36,7 @@
     <section id="browser" class="browser" hidden>
       <div class="toolbar">
         <button id="up-btn" type="button" title="Up one level">↑ Up</button>
+        <button id="new-folder-btn" type="button" title="Create a folder here">New Folder</button>
         <select id="sort">
           <option value="name-desc">Name (Z→A)</option>
           <option value="name-asc">Name (A→Z)</option>
@@ -69,6 +70,19 @@
       </div>
     </section>
   </main>
+
+  <dialog id="new-folder-dialog" class="modal" aria-labelledby="new-folder-title">
+    <form id="new-folder-form" method="dialog">
+      <h2 id="new-folder-title">New Folder</h2>
+      <p class="modal-path">Create in: <code id="new-folder-path"></code></p>
+      <label for="new-folder-name">Folder name</label>
+      <input id="new-folder-name" type="text" autocomplete="off" required />
+      <div class="modal-actions">
+        <button id="new-folder-cancel" type="button">Cancel</button>
+        <button id="new-folder-create" type="submit" class="primary">Create</button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="toast" class="toast" hidden></div>
 

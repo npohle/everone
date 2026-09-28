@@ -12,9 +12,16 @@ async function graphFetch(url, init = {}) {
     },
   });
   if (!res.ok) {
+    // Keep the raw response body on the error so callers can surface the full
+    // OneDrive error payload (code, innerError, etc.), not just the message.
+    let body = "";
+    try { body = await res.text(); } catch {}
     let detail = "";
-    try { detail = (await res.json()).error?.message || ""; } catch {}
-    throw new Error(`Graph ${res.status}: ${detail || res.statusText}`);
+    try { detail = JSON.parse(body).error?.message || ""; } catch {}
+    const err = new Error(`Graph ${res.status}: ${detail || res.statusText}`);
+    err.status = res.status;
+    err.body = body;
+    throw err;
   }
   return res;
 }
@@ -66,6 +73,24 @@ export async function getItem(itemId) {
 export async function getRoot() {
   const url = `${config.graphBase}/me/drive/root?$select=${SELECT}`;
   return graphJson(url);
+}
+
+// Creates a folder under parentId (or the drive root when null). Uses
+// conflictBehavior "fail" so an existing name surfaces as an error instead of
+// being silently renamed.
+export async function createFolder(parentId, name) {
+  const path = parentId
+    ? `/me/drive/items/${encodeURIComponent(parentId)}/children`
+    : `/me/drive/root/children`;
+  return graphJson(`${config.graphBase}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      folder: {},
+      "@microsoft.graph.conflictBehavior": "fail",
+    }),
+  });
 }
 
 export async function search(query, sort) {

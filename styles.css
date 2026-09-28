@@ -444,3 +444,38 @@ body.split-dragging { cursor: col-resize; }
   z-index: 100;
   box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
+
+.toast {
+  /* Error dumps from Graph are multi-line, pretty-printed JSON. */
+  white-space: pre-wrap;
+  max-width: min(90vw, 720px);
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.modal {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  width: min(90vw, 420px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.modal::backdrop { background: rgba(0, 0, 0, 0.4); }
+.modal h2 { margin: 0 0 8px; font-size: 16px; }
+.modal-path { margin: 0 0 12px; color: var(--muted); word-break: break-all; }
+.modal label { display: block; margin-bottom: 4px; font-weight: 600; }
+.modal input[type="text"] {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
