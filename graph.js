@@ -11,19 +11,21 @@ async function graphFetch(url, init = {}) {
       ...(init.headers || {}),
     },
   });
-  if (!res.ok) {
-    // Keep the raw response body on the error so callers can surface the full
-    // OneDrive error payload (code, innerError, etc.), not just the message.
-    let body = "";
-    try { body = await res.text(); } catch {}
-    let detail = "";
-    try { detail = JSON.parse(body).error?.message || ""; } catch {}
-    const err = new Error(`Graph ${res.status}: ${detail || res.statusText}`);
-    err.status = res.status;
-    err.body = body;
-    throw err;
-  }
+  if (!res.ok) throw await responseError(res);
   return res;
+}
+
+// Keep the raw response body on the error so callers can surface the full
+// OneDrive error payload (code, innerError, etc.), not just the message.
+async function responseError(res) {
+  let body = "";
+  try { body = await res.text(); } catch {}
+  let detail = "";
+  try { detail = JSON.parse(body).error?.message || ""; } catch {}
+  const err = new Error(`Graph ${res.status}: ${detail || res.statusText}`);
+  err.status = res.status;
+  err.body = body;
+  return err;
 }
 
 async function graphJson(url, init) {
@@ -105,6 +107,53 @@ export async function deleteEmptyFolder(itemId) {
   await graphFetch(`${config.graphBase}/me/drive/items/${encodeURIComponent(itemId)}`, {
     method: "DELETE",
   });
+}
+
+// Graph's simple upload is only recommended up to 4 MB; anything larger goes
+// through an upload session in chunks. Chunk sizes must be multiples of
+// 320 KiB.
+const SIMPLE_UPLOAD_MAX = 4 * 1024 * 1024;
+const UPLOAD_CHUNK_SIZE = 320 * 1024 * 32; // 10 MiB
+
+// Uploads a File into parentId (or the drive root when null) under its own
+// name. Uses conflictBehavior "fail" so an existing name surfaces as an error
+// instead of overwriting or silently renaming.
+export async function uploadFile(parentId, file) {
+  const parentPath = parentId
+    ? `/me/drive/items/${encodeURIComponent(parentId)}:`
+    : `/me/drive/root:`;
+  const itemPath = `${config.graphBase}${parentPath}/${encodeURIComponent(file.name)}:`;
+
+  if (file.size <= SIMPLE_UPLOAD_MAX) {
+    return graphJson(`${itemPath}/content?@microsoft.graph.conflictBehavior=fail`, {
+      method: "PUT",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+  }
+
+  const session = await graphJson(`${itemPath}/createUploadSession`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "fail" } }),
+  });
+  let offset = 0;
+  while (true) {
+    const end = Math.min(offset + UPLOAD_CHUNK_SIZE, file.size);
+    // The pre-authenticated uploadUrl must not receive an Authorization header.
+    const res = await fetch(session.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Range": `bytes ${offset}-${end - 1}/${file.size}` },
+      body: file.slice(offset, end),
+    });
+    if (!res.ok) {
+      const err = await responseError(res);
+      fetch(session.uploadUrl, { method: "DELETE" }).catch(() => {});
+      throw err;
+    }
+    if (end >= file.size) return res.json();
+    offset = end;
+  }
 }
 
 export async function search(query, sort) {

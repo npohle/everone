@@ -156,7 +156,6 @@ Caddy for that run; omit `runid` to close the most recently *created*
 
 ## Known gaps
 
-* `npm run test:unit` currently has no tests under `tests/unit/` to run.
 * `.gitignore`'s `playwright/.auth/` entry is vestigial — sign-in state is
   written to `localstorage.json`/`sessionstorage.json` in the artefacts
   directory, not `playwright/.auth/`.

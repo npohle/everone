@@ -491,3 +491,53 @@ button.danger {
   font-weight: 600;
 }
 button.danger:hover { filter: brightness(0.9); }
+
+.upload-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.upload-list:empty { display: none; }
+.upload-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.upload-list li:last-child { border-bottom: 0; }
+.upload-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upload-remove {
+  padding: 0 6px;
+  line-height: 20px;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+}
+.upload-remove:hover { color: var(--danger); }
+.upload-status {
+  display: inline-block;
+  width: 16px;
+  text-align: center;
+  font-weight: 700;
+}
+.upload-status.progress {
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: upload-spin 0.8s linear infinite;
+}
+.upload-status.success { color: #1a7f37; }
+.upload-status.failed { color: var(--danger); }
+@keyframes upload-spin { to { transform: rotate(360deg); } }

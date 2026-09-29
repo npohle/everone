@@ -2,6 +2,7 @@ import { config, isConfigured } from "./config.js";
 import * as auth from "./auth.js";
 import * as graph from "./graph.js";
 import * as viewer from "./viewer.js";
+import { mergeFiles } from "./upload-list.js";
 
 const els = {
   signedOut: document.getElementById("signed-out"),
@@ -32,6 +33,16 @@ const els = {
   deleteFolderPath: document.getElementById("delete-folder-path"),
   deleteFolderCancel: document.getElementById("delete-folder-cancel"),
   deleteFolderConfirm: document.getElementById("delete-folder-confirm"),
+  uploadBtn: document.getElementById("upload-btn"),
+  uploadDialog: document.getElementById("upload-dialog"),
+  uploadForm: document.getElementById("upload-form"),
+  uploadPath: document.getElementById("upload-path"),
+  uploadInput: document.getElementById("upload-input"),
+  uploadSelect: document.getElementById("upload-select"),
+  uploadList: document.getElementById("upload-list"),
+  uploadCancel: document.getElementById("upload-cancel"),
+  uploadStart: document.getElementById("upload-start"),
+  uploadClose: document.getElementById("upload-close"),
 };
 
 const state = {
@@ -48,6 +59,9 @@ const state = {
   selectedId: null,
   // True while a folder listing or search request is in flight.
   loading: false,
+  // Upload dialog: target folder, picked files, and per-file result keyed by
+  // name. phase is "select" (editable), "uploading" (read-only) or "done".
+  upload: { folder: null, files: [], results: new Map(), phase: "select" },
 };
 
 function showToast(msg, ms = 4000) {
@@ -279,6 +293,114 @@ async function deleteFolder() {
   await loadCurrent();
 }
 
+function openUploadDialog() {
+  state.upload = {
+    folder: state.stack[state.stack.length - 1] || null,
+    files: [],
+    results: new Map(),
+    phase: "select",
+  };
+  els.uploadPath.textContent = currentFolderPath();
+  els.uploadInput.value = "";
+  renderUploadDialog();
+  els.uploadDialog.showModal();
+}
+
+const UPLOAD_STATUS = {
+  uploading: { cls: "progress", label: "Uploading", text: "" },
+  success: { cls: "success", label: "Uploaded", text: "✓" },
+  failed: { cls: "failed", label: "Upload failed", text: "✗" },
+};
+
+function renderUploadDialog() {
+  const { files, results, phase } = state.upload;
+  els.uploadList.replaceChildren();
+  for (const file of files) {
+    const li = document.createElement("li");
+    const name = document.createElement("span");
+    name.className = "upload-name";
+    name.textContent = file.name;
+    li.appendChild(name);
+
+    if (phase === "select") {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "upload-remove";
+      remove.textContent = "✕";
+      remove.setAttribute("aria-label", `Remove ${file.name}`);
+      remove.title = "Remove";
+      remove.addEventListener("click", () => {
+        state.upload.files = state.upload.files.filter((f) => f !== file);
+        renderUploadDialog();
+      });
+      li.appendChild(remove);
+    } else {
+      const result = results.get(file.name) || { status: "uploading" };
+      const s = UPLOAD_STATUS[result.status];
+      const icon = document.createElement("span");
+      icon.className = `upload-status ${s.cls}`;
+      icon.setAttribute("role", "img");
+      icon.setAttribute("aria-label", s.label);
+      icon.title = result.error ? `${s.label}: ${result.error}` : s.label;
+      icon.textContent = s.text;
+      li.appendChild(icon);
+    }
+    els.uploadList.appendChild(li);
+  }
+
+  const editable = phase === "select";
+  els.uploadSelect.disabled = !editable;
+  els.uploadCancel.disabled = !editable;
+  els.uploadStart.disabled = !editable || files.length === 0;
+  els.uploadStart.hidden = phase === "done";
+  els.uploadClose.hidden = phase !== "done";
+}
+
+function addUploadFiles(fileList) {
+  if (state.upload.phase !== "select") return;
+  state.upload.files = mergeFiles(state.upload.files, fileList);
+  // Reset so picking the same file again still fires "change".
+  els.uploadInput.value = "";
+  renderUploadDialog();
+}
+
+// Uploads a few files at a time; each one reports success or failure on its
+// own, so one rejected file doesn't stop the rest.
+const UPLOAD_CONCURRENCY = 3;
+
+async function startUpload() {
+  const upload = state.upload;
+  if (upload.phase !== "select" || upload.files.length === 0) return;
+  upload.phase = "uploading";
+  renderUploadDialog();
+
+  const queue = upload.files.slice();
+  const worker = async () => {
+    while (queue.length) {
+      const file = queue.shift();
+      try {
+        await graph.uploadFile(upload.folder ? upload.folder.id : null, file);
+        upload.results.set(file.name, { status: "success" });
+      } catch (err) {
+        upload.results.set(file.name, { status: "failed", error: errorDump(err) });
+      }
+      if (state.upload === upload) renderUploadDialog();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, queue.length) }, worker));
+
+  upload.phase = "done";
+  if (state.upload !== upload) return;
+  renderUploadDialog();
+  if (els.uploadDialog.open) {
+    els.uploadClose.focus();
+  } else {
+    // Chrome lets a repeated Escape bypass the cancel guard; the dialog is
+    // already gone, so refresh here instead of on Close.
+    loadCurrent();
+  }
+}
+
 function onItemClick(item) {
   if (item.folder) {
     state.stack.push({ id: item.id, name: item.name });
@@ -474,6 +596,24 @@ function wireEvents() {
   els.deleteFolderForm.addEventListener("submit", (e) => {
     e.preventDefault();
     deleteFolder();
+  });
+  els.uploadBtn.addEventListener("click", openUploadDialog);
+  els.uploadSelect.addEventListener("click", () => els.uploadInput.click());
+  els.uploadInput.addEventListener("change", () => addUploadFiles(els.uploadInput.files));
+  els.uploadCancel.addEventListener("click", () => els.uploadDialog.close());
+  els.uploadClose.addEventListener("click", () => els.uploadDialog.close());
+  els.uploadForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    startUpload();
+  });
+  // Escape must not dismiss the dialog while it is read-only mid-upload.
+  els.uploadDialog.addEventListener("cancel", (e) => {
+    if (state.upload.phase === "uploading") e.preventDefault();
+  });
+  // Once anything was uploaded, closing (via Close or Escape) refreshes the
+  // listing so the new files show up.
+  els.uploadDialog.addEventListener("close", () => {
+    if (state.upload.phase === "done") loadCurrent();
   });
   els.loadMore.addEventListener("click", loadMore);
   els.search.addEventListener("input", debounce((e) => {
