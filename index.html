@@ -37,6 +37,7 @@
       <div class="toolbar">
         <button id="up-btn" type="button" title="Up one level">↑ Up</button>
         <button id="new-folder-btn" type="button" title="Create a folder here">New Folder</button>
+        <button id="delete-folder-btn" type="button" title="Delete this folder (only when empty)" disabled>Delete Folder</button>
         <select id="sort">
           <option value="name-desc">Name (Z→A)</option>
           <option value="name-asc">Name (A→Z)</option>
@@ -80,6 +81,17 @@
       <div class="modal-actions">
         <button id="new-folder-cancel" type="button">Cancel</button>
         <button id="new-folder-create" type="submit" class="primary">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="delete-folder-dialog" class="modal" aria-labelledby="delete-folder-title">
+    <form id="delete-folder-form" method="dialog">
+      <h2 id="delete-folder-title">Delete Folder</h2>
+      <p class="modal-path">Delete: <code id="delete-folder-path"></code></p>
+      <div class="modal-actions">
+        <button id="delete-folder-cancel" type="button">Cancel</button>
+        <button id="delete-folder-confirm" type="submit" class="danger">Delete</button>
       </div>
     </form>
   </dialog>

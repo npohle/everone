@@ -26,6 +26,12 @@ const els = {
   newFolderName: document.getElementById("new-folder-name"),
   newFolderCancel: document.getElementById("new-folder-cancel"),
   newFolderCreate: document.getElementById("new-folder-create"),
+  deleteFolderBtn: document.getElementById("delete-folder-btn"),
+  deleteFolderDialog: document.getElementById("delete-folder-dialog"),
+  deleteFolderForm: document.getElementById("delete-folder-form"),
+  deleteFolderPath: document.getElementById("delete-folder-path"),
+  deleteFolderCancel: document.getElementById("delete-folder-cancel"),
+  deleteFolderConfirm: document.getElementById("delete-folder-confirm"),
 };
 
 const state = {
@@ -40,6 +46,8 @@ const state = {
   loadId: 0,
   // Currently selected file id (the one being previewed).
   selectedId: null,
+  // True while a folder listing or search request is in flight.
+  loading: false,
 };
 
 function showToast(msg, ms = 4000) {
@@ -233,6 +241,44 @@ async function createFolder() {
   await loadCurrent();
 }
 
+// A folder can only be deleted when it is empty: no files, no subfolders.
+// The root can't be deleted, and while loading or showing search results the
+// listing doesn't reflect the current folder's contents, so stay disabled.
+function updateDeleteFolderBtn() {
+  els.deleteFolderBtn.disabled =
+    state.stack.length === 0 ||
+    state.loading ||
+    !!state.searchQuery ||
+    state.items.length > 0 ||
+    !!state.nextLink;
+}
+
+function openDeleteFolderDialog() {
+  if (els.deleteFolderBtn.disabled) return;
+  els.deleteFolderPath.textContent = currentFolderPath();
+  els.deleteFolderConfirm.disabled = false;
+  els.deleteFolderDialog.showModal();
+}
+
+async function deleteFolder() {
+  const folder = state.stack[state.stack.length - 1];
+  if (!folder) return;
+  const path = currentFolderPath();
+  els.deleteFolderConfirm.disabled = true;
+  try {
+    await graph.deleteEmptyFolder(folder.id);
+  } catch (err) {
+    // Close first: a modal <dialog> sits in the top layer and would cover
+    // the toast behind its backdrop.
+    els.deleteFolderDialog.close();
+    showToast(`Failed to delete folder "${path}":\n${errorDump(err)}`, 15000);
+    return;
+  }
+  els.deleteFolderDialog.close();
+  state.stack.pop();
+  await loadCurrent();
+}
+
 function onItemClick(item) {
   if (item.folder) {
     state.stack.push({ id: item.id, name: item.name });
@@ -264,6 +310,8 @@ async function loadCurrent() {
   state.selectedId = null;
   viewer.clear();
   const id = ++state.loadId;
+  state.loading = true;
+  updateDeleteFolderBtn();
   els.loading.hidden = false;
   els.loadMore.hidden = true;
   setStatus("");
@@ -285,7 +333,11 @@ async function loadCurrent() {
     state.nextLink = null;
     renderListing();
   } finally {
-    if (id === state.loadId) els.loading.hidden = true;
+    if (id === state.loadId) {
+      els.loading.hidden = true;
+      state.loading = false;
+      updateDeleteFolderBtn();
+    }
   }
 }
 
@@ -312,6 +364,8 @@ async function runSearch(query) {
   const id = ++state.loadId;
   state.searchQuery = query;
   state.selectedId = null;
+  state.loading = true;
+  updateDeleteFolderBtn();
   viewer.clear();
   els.loading.hidden = false;
   els.loadMore.hidden = true;
@@ -333,7 +387,11 @@ async function runSearch(query) {
     if (id !== state.loadId) return;
     showToast(err.message || "Search failed");
   } finally {
-    if (id === state.loadId) els.loading.hidden = true;
+    if (id === state.loadId) {
+      els.loading.hidden = true;
+      state.loading = false;
+      updateDeleteFolderBtn();
+    }
   }
 }
 
@@ -410,6 +468,12 @@ function wireEvents() {
   els.newFolderForm.addEventListener("submit", (e) => {
     e.preventDefault();
     createFolder();
+  });
+  els.deleteFolderBtn.addEventListener("click", openDeleteFolderDialog);
+  els.deleteFolderCancel.addEventListener("click", () => els.deleteFolderDialog.close());
+  els.deleteFolderForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    deleteFolder();
   });
   els.loadMore.addEventListener("click", loadMore);
   els.search.addEventListener("input", debounce((e) => {
