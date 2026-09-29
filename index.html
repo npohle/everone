@@ -38,6 +38,7 @@
         <button id="up-btn" type="button" title="Up one level">↑ Up</button>
         <button id="new-folder-btn" type="button" title="Create a folder here">New Folder</button>
         <button id="delete-folder-btn" type="button" title="Delete this folder (only when empty)" disabled>Delete Folder</button>
+        <button id="upload-btn" type="button" title="Upload files into this folder">Upload</button>
         <select id="sort">
           <option value="name-desc">Name (Z→A)</option>
           <option value="name-asc">Name (A→Z)</option>
@@ -92,6 +93,21 @@
       <div class="modal-actions">
         <button id="delete-folder-cancel" type="button">Cancel</button>
         <button id="delete-folder-confirm" type="submit" class="danger">Delete</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="upload-dialog" class="modal upload-modal" aria-labelledby="upload-title">
+    <form id="upload-form" method="dialog">
+      <h2 id="upload-title">Upload Files</h2>
+      <p class="modal-path">Upload to: <code id="upload-path"></code></p>
+      <input id="upload-input" type="file" multiple hidden />
+      <button id="upload-select" type="button">File Selector</button>
+      <ul id="upload-list" class="upload-list" aria-label="Files to upload"></ul>
+      <div class="modal-actions">
+        <button id="upload-cancel" type="button">Cancel</button>
+        <button id="upload-start" type="submit" class="primary">Upload</button>
+        <button id="upload-close" type="button" class="primary" hidden>Close</button>
       </div>
     </form>
   </dialog>

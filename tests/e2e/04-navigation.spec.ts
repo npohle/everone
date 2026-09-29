@@ -7,5 +7,5 @@ test("NAV-001: an \"Up\" button is present", async ({ page }) => {
   await expect(page.getByText("Loading")).not.toBeVisible();
   await page.screenshot({ path: `${artefactsDir}/04-00-signed-in.png` });
 
-  await expect(page.getByRole("button", { name: "Up" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "↑ Up", exact: true })).toBeVisible();
 });
