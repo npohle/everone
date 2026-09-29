@@ -479,3 +479,15 @@ body.split-dragging { cursor: col-resize; }
   gap: 8px;
   margin-top: 16px;
 }
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+button.danger {
+  background: var(--danger);
+  color: white;
+  border-color: var(--danger);
+  font-weight: 600;
+}
+button.danger:hover { filter: brightness(0.9); }

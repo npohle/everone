@@ -93,6 +93,20 @@ export async function createFolder(parentId, name) {
   });
 }
 
+// Deletes a folder, but only if OneDrive reports it has no children. Graph's
+// DELETE is recursive, so the emptiness check is repeated here against fresh
+// server state rather than trusting whatever listing the UI last rendered.
+export async function deleteEmptyFolder(itemId) {
+  const item = await getItem(itemId);
+  if (!item.folder) throw new Error(`"${item.name}" is not a folder`);
+  if (item.folder.childCount > 0) {
+    throw new Error(`"${item.name}" is not empty (${item.folder.childCount} item${item.folder.childCount === 1 ? "" : "s"})`);
+  }
+  await graphFetch(`${config.graphBase}/me/drive/items/${encodeURIComponent(itemId)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function search(query, sort) {
   const q = encodeURIComponent(query);
   const url = `${config.graphBase}/me/drive/root/search(q='${q}')?$top=${config.pageSize}&$select=${SELECT}${orderByParam(sort)}`;
