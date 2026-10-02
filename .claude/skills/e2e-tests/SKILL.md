@@ -60,12 +60,13 @@ directory to an internal dashboard, so artefacts can be browsed from a phone
 or another machine without needing shell access to the box that ran the
 tests. The dashboard URL is:
 
-http://ubuntu-nbg1-1.tailab4759.ts.net:8081/<hostname>/tasks/
+http://ubuntu-nbg1-1.tailab4759.ts.net:8081/<hostname>/tasks/<TASK_ID>/tests/artefacts/<RUN_ID>
 
 where `<hostname>` is this machine's own hostname (the output of running
-`hostname` locally). After running the suite, work out this run's URL and
+`hostname` locally) and `<taskid>` as defined in the system prompt.
+After running the suite, work out this run's URL and
 include it in your summary to the user — there's no need to open or fetch
-it yourself.
+it yourself. Always include the URL into the description of every PR you generate.
 
 ## Writing a new spec
 
