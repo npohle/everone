@@ -40,6 +40,7 @@ const els = {
   root: document.getElementById("viewer"),
   body: document.getElementById("viewer-body"),
   title: document.getElementById("viewer-title"),
+  meta: document.getElementById("viewer-meta"),
   download: document.getElementById("viewer-download"),
   open: document.getElementById("viewer-open"),
 };
@@ -146,6 +147,27 @@ function startFocusGuard() {
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
+}
+
+function formatMetaDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const now = new Date();
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: sameYear ? undefined : "numeric",
+  });
+}
+
+function buildMetaText(item) {
+  const parts = [];
+  if (item.size != null) parts.push(formatBytes(item.size));
+  const mod = formatMetaDate(item.lastModifiedDateTime);
+  if (mod) parts.push("Modified " + mod);
+  return parts.join("  ·  ");
 }
 
 function extOf(name) {
@@ -381,6 +403,7 @@ export async function open(item) {
     stopFocusGuard();
   }
   els.title.textContent = item.name;
+  if (els.meta) els.meta.textContent = buildMetaText(item);
   els.download.href = item["@microsoft.graph.downloadUrl"] || "#";
   els.download.setAttribute("download", item.name);
   els.download.hidden = !item["@microsoft.graph.downloadUrl"];
@@ -429,6 +452,7 @@ export function clear() {
   savedFocus = null;
   stopFocusGuard();
   els.title.textContent = "Preview";
+  if (els.meta) els.meta.textContent = "";
   els.download.hidden = true;
   els.open.hidden = true;
   const placeholder = document.createElement("div");
