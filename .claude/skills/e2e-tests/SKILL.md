@@ -65,7 +65,7 @@ standing rule for every PR.
 ```bash
 RUN_ID=$(ls tests/artefacts | sort | tail -n1)
 rclone copy "tests/artefacts/$RUN_ID" \
-  ":webdav,url='http://ubuntu-nbg1-1.tailab4759.ts.net/dufs',vendor=other:$RUN_ID" \
+  ":webdav,url='http://dufs-service.default.svc.cluster.local/dufs/tasks',vendor=other:$RUN_ID" \
   --exclude "localstorage.json" --exclude "sessionstorage.json"
 ```
 
@@ -82,7 +82,7 @@ Notes:
 The uploaded run is then reachable at:
 
 ```
-http://ubuntu-nbg1-1.tailab4759.ts.net/dufs/<RUN_ID>/
+http://ubuntu-nbg1-1.tailab4759.ts.net/dufs/tasks/<RUN_ID>/
 ```
 
 Only include that link in a PR description when asked to, or when the PR
