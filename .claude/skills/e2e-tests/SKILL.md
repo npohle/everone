@@ -53,20 +53,40 @@ Each run gets its own folder, `tests/artefacts/<RUN_ID>/` (gitignored), where
 After a run, find the newest directory under `tests/artefacts/` to inspect
 what happened.
 
-## Browsing artefacts on the web
+## Sharing a run's artefacts in a PR description
 
-Every machine that runs this suite also mirrors its `tests/artefacts/`
-directory to an internal dashboard, so artefacts can be browsed from a phone
-or another machine without needing shell access to the box that ran the
-tests. The dashboard URL is:
+`tests/artefacts/<RUN_ID>/` only exists on the machine that ran the suite, so
+a PR description can't link to it directly. If a PR's changes are backed by
+an e2e run and it's worth linking the artefacts (screenshots, traces) from
+the PR description, upload that run's folder to the shared `dufs` file
+server with `rclone`, then link to it there — do this on request, not as a
+standing rule for every PR.
 
-http://ubuntu-nbg1-1.tailab4759.ts.net:8081/<hostname>/tasks/<TASK_ID>/tests/artefacts/<RUN_ID>
+```bash
+RUN_ID=$(ls tests/artefacts | sort | tail -n1)
+rclone copy "tests/artefacts/$RUN_ID" \
+  ":webdav,url='http://ubuntu-nbg1-1.tailab4759.ts.net/dufs',vendor=other:$RUN_ID" \
+  --exclude "localstorage.json" --exclude "sessionstorage.json"
+```
 
-where `<hostname>` is this machine's own hostname (the output of running
-`hostname` locally) and `<taskid>` as defined in the system prompt.
-After running the suite, work out this run's URL and
-include it in your summary to the user — there's no need to open or fetch
-it yourself. Always include the URL into the description of every PR you generate.
+Notes:
+
+* `:webdav,url='...',vendor=other:$RUN_ID` is an rclone on-the-fly remote
+  (dufs speaks WebDAV) — no saved `rclone.conf` remote needed. The trailing
+  `:$RUN_ID` is the destination path, so the run lands in its own
+  `$RUN_ID` subdirectory on the server, matching the local folder name.
+* Always exclude `localstorage.json` / `sessionstorage.json` from the
+  upload — they hold the real, live Microsoft sign-in state for the test
+  account (cookies / session tokens), not just test output.
+
+The uploaded run is then reachable at:
+
+```
+http://ubuntu-nbg1-1.tailab4759.ts.net/dufs/<RUN_ID>/
+```
+
+Only include that link in a PR description when asked to, or when the PR
+description is explicitly about this e2e run's results.
 
 ## Writing a new spec
 
