@@ -303,13 +303,21 @@ body.split-dragging { cursor: col-resize; }
   background: var(--bg);
 }
 .viewer-title {
-  flex: 1;
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
 }
+.viewer-scribe {
+  flex: none;
+  padding: 3px 10px;
+  font-size: 13px;
+}
+.viewer-scribe[hidden] { display: none; }
 .viewer-actions {
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -478,6 +486,24 @@ body.split-dragging { cursor: col-resize; }
   justify-content: flex-end;
   gap: 8px;
   margin-top: 16px;
+}
+
+.scribe-modal { width: min(90vw, 760px); }
+.scribe-status { margin: 0 0 8px; color: var(--muted); }
+.scribe-status:empty { display: none; }
+.scribe-text {
+  display: block;
+  width: 100%;
+  height: 60vh;
+  resize: vertical;
+  overflow: auto;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
 }
 
 button:disabled {
