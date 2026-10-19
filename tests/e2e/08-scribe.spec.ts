@@ -49,7 +49,7 @@ async function openFolder(page: Page, name: string) {
 }
 
 test("SCRIBE-001: extract the text of a previewed PDF into a modal dialog", async ({ page }) => {
-  // Scribe downloads its engine from the CDN on first use, then parses the PDF.
+  // Scribe loads its (vendored) engine on first use, then parses the PDF.
   test.setTimeout(180_000);
   const artefactsDir = process.env.ARTEFACTS_DIR;
   const folderName = randomFolderName();
