@@ -42,12 +42,11 @@ Run a single spec file the same way Playwright normally supports:
 `globalTeardown` hooks) starts once for the whole run, before any project,
 and stops once at the very end:
 
-* Picks a free local port and serves the repo root over internal TLS,
-  `handle_path`-mapped so `/everone/*` resolves without the checkout needing
-  to live in a directory literally named `everone`.
+* Picks a free local port and serves the repo root over internal TLS at `/`,
+  matching the production deployment (no base path).
 * This matters because `auth.js` derives the OAuth redirect URI from
   `window.location`, and the Azure app registration only accepts the deployed
-  origin (`https://rubisco.io/everone/`) — a plain `localhost` dev
+  origin (`https://rubisco.io/`) — a plain `localhost` dev
   server gets rejected by Microsoft with an `invalid_request` /
   bad `redirect_uri` error. Caddy is bound to that real hostname instead, and
   browsers are launched with a `--host-resolver-rules` mapping pointing the

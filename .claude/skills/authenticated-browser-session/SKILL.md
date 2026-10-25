@@ -1,6 +1,6 @@
 ---
 name: authenticated-browser-session
-description: Open a chrome instance that is already signed in to the EverOne app, for exploratory playwright-cli calls. Use when a task needs a live, authenticated browser session against https://rubisco.io/everone/ rather than a full e2e test run.
+description: Open a chrome instance that is already signed in to the EverOne app, for exploratory playwright-cli calls. Use when a task needs a live, authenticated browser session against https://rubisco.io/ rather than a full e2e test run.
 allowed-tools: Bash(node:*) Bash(playwright-cli:*)
 ---
 
@@ -41,12 +41,12 @@ ignored — only the last stdout line matters, and that's the `RUN_ID`.
 
 Pass the `RUN_ID` from the `open` output as playwright-cli's `-s` (session id) on
 every subsequent call. The browser is already on
-`https://rubisco.io/everone/`, signed in, ready for snapshot/click/etc:
+`https://rubisco.io/`, signed in, ready for snapshot/click/etc:
 
 ```bash
 playwright-cli -s=20260914-153000-12345 snapshot
 playwright-cli -s=20260914-153000-12345 click e15
-playwright-cli -s=20260914-153000-12345 goto https://rubisco.io/everone/some/path
+playwright-cli -s=20260914-153000-12345 goto https://rubisco.io/some/path
 ```
 
 See the `playwright-cli` skill for the full command set once the session is open.

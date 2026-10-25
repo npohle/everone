@@ -106,7 +106,7 @@ program
           "-s", runid!, "open",
           `--config=${playwrightCliConfigFile}`,
           ...(options.headed ? ["--headed"] : []),
-          "https://rubisco.io/everone/",
+          "https://rubisco.io/",
         ]);
         await runPlaywrightCli(["-s", runid!, "state-load", `tests/artefacts/${runid}/localstorage.json`]);
 

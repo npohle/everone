@@ -14,6 +14,6 @@ export default async function globalSetup(config: FullConfig) {
   console.log(`Artefacts directory: ${artefactsDir}`);
 
   const { pid, port } = await startCaddy(artefactsDir);
-  console.log(`Caddy (pid ${pid}) is serving https://rubisco.io:${port}/everone/ (https://127.0.0.1:${port}/everone/)`);
+  console.log(`Caddy (pid ${pid}) is serving https://rubisco.io:${port}/ (https://127.0.0.1:${port}/)`);
 
 }

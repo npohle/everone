@@ -3,7 +3,7 @@ import { test, expect } from "./fixtures.ts";
 test("AUTH-001: user is authenticated", async ({ page }) => {
   const artefactsDir = process.env.ARTEFACTS_DIR;
 
-  await page.goto(`https://rubisco.io/everone/`);
+  await page.goto(`https://rubisco.io/`);
   
   await page.screenshot({ path: `${artefactsDir}/01-00-start.png` });
 

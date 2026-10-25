@@ -5,7 +5,7 @@ import { test, expect } from "./fixtures.ts";
 test('SEARCH-001: search for "Anywhere"', async ({ page }) => {
   const artefactsDir = process.env.ARTEFACTS_DIR;
 
-  await page.goto(`https://rubisco.io/everone/`);
+  await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
   await page.screenshot({ path: `${artefactsDir}/02-00-start.png` });
 

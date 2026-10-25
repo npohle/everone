@@ -7,7 +7,7 @@ allowed-tools: Bash(npm run test:e2e:*) Bash(npx playwright:*)
 # End-to-end tests
 
 The suite lives in `tests/e2e/` and runs against the real, deployed app
-(`https://rubisco.io/everone/`), served locally over TLS via Caddy and
+(`https://rubisco.io/`), served locally over TLS via Caddy and
 signed in with a real Microsoft account. There's no mocking.
 
 ## Running the suite
@@ -102,7 +102,7 @@ Follow the existing specs' conventions exactly — look at
   prefix matches the file's topic, numbered per file.
 * Read `process.env.ARTEFACTS_DIR` for screenshot paths, named
   `NN-MM-description.png` (file prefix, then a per-test sequence number).
-* Navigate with `await page.goto("https://rubisco.io/everone/")` — the
+* Navigate with `await page.goto("https://rubisco.io/")` — the
   real hostname, resolved locally by Caddy via the `browser` fixture's
   `--host-resolver-rules`, not `localhost`.
 * Assert the app has finished loading before asserting on content:
@@ -114,7 +114,7 @@ import { test, expect } from "./fixtures.ts";
 test("TOPIC-001: description", async ({ page }) => {
   const artefactsDir = process.env.ARTEFACTS_DIR;
 
-  await page.goto(`https://rubisco.io/everone/`);
+  await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
   await page.screenshot({ path: `${artefactsDir}/NN-00-start.png` });
 
