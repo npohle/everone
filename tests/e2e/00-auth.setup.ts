@@ -8,7 +8,7 @@ import fs from "node:fs";
 
 setup('authenticate', async ({ page }) => {
     
-    await page.goto(`https://npohle.github.io/everone/`);
+    await page.goto(`https://rubisco.io/everone/`);
 
     const popupPromise = page.waitForEvent("popup");
     await page.getByRole("button", { name: "Sign in with Microsoft" }).click();

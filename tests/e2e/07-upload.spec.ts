@@ -19,7 +19,7 @@ function createLocalFiles(...names: string[]): Record<string, string> {
 }
 
 async function openDocuments(page: Page) {
-  await page.goto(`https://npohle.github.io/everone/`);
+  await page.goto(`https://rubisco.io/everone/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
   await page.locator("#listing").getByText("Documents", { exact: true }).click();
   await expect(page.locator("#breadcrumbs")).toContainText("Documents");

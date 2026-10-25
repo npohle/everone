@@ -6,7 +6,7 @@ test('FOLDER-001: create a new folder inside "Documents"', async ({ page }) => {
   const folderName = `e2e-test-${randomBytes(6).toString("hex")}`;
   const listing = page.locator("#listing");
 
-  await page.goto(`https://npohle.github.io/everone/`);
+  await page.goto(`https://rubisco.io/everone/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
   await page.screenshot({ path: `${artefactsDir}/05-00-start.png` });
 
@@ -48,7 +48,7 @@ test('FOLDER-001: create a new folder inside "Documents"', async ({ page }) => {
 test("FOLDER-002: cancelling the New Folder dialog closes it without creating anything", async ({ page }) => {
   const artefactsDir = process.env.ARTEFACTS_DIR;
 
-  await page.goto(`https://npohle.github.io/everone/`);
+  await page.goto(`https://rubisco.io/everone/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
 
   await page.getByRole("button", { name: "New Folder" }).click();
@@ -70,7 +70,7 @@ test("FOLDER-002: cancelling the New Folder dialog closes it without creating an
 test("FOLDER-003: a failed create shows a toast with OneDrive's error", async ({ page }) => {
   const artefactsDir = process.env.ARTEFACTS_DIR;
 
-  await page.goto(`https://npohle.github.io/everone/`);
+  await page.goto(`https://rubisco.io/everone/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
 
   await page.getByRole("button", { name: "New Folder" }).click();

@@ -4,7 +4,7 @@
 //
 // auth.js derives the OAuth redirect URI from window.location, and the Azure
 // app registration only accepts the deployed origin
-// (https://npohle.github.io/everone/) — a plain localhost dev server gets
+// (https://rubisco.io/everone/) — a plain localhost dev server gets
 // rejected by Microsoft with an invalid_request / bad redirect_uri error.
 // So instead, Caddy serves the repo root bound to that real hostname, and
 // the browser is launched with a --host-resolver-rules mapping pointing the
@@ -87,7 +87,7 @@ export type CaddyState = { pid: number; port: number };
  */
 export async function startCaddy(
   artefactsDir: string,
-  host = "npohle.github.io",
+  host = "rubisco.io",
   basePath = "everone",
 ): Promise<CaddyState> {
   const port = await findFreePort(CANDIDATE_PORTS);

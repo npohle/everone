@@ -47,7 +47,7 @@ and stops once at the very end:
   to live in a directory literally named `everone`.
 * This matters because `auth.js` derives the OAuth redirect URI from
   `window.location`, and the Azure app registration only accepts the deployed
-  origin (`https://npohle.github.io/everone/`) — a plain `localhost` dev
+  origin (`https://rubisco.io/everone/`) — a plain `localhost` dev
   server gets rejected by Microsoft with an `invalid_request` /
   bad `redirect_uri` error. Caddy is bound to that real hostname instead, and
   browsers are launched with a `--host-resolver-rules` mapping pointing the
@@ -135,7 +135,7 @@ node tests/explorative/authenticatedBrowserSession.ts close [runid]
    `startCaddy` from `tests/e2e/lib/caddy.ts`) dedicated to this exploratory
    session, and writes a `playwright-cli.config.json` with
    `browser.launchOptions.args: ["--host-resolver-rules=MAP
-   npohle.github.io 127.0.0.1:<port>"]` — playwright-cli's `open` has no
+   rubisco.io 127.0.0.1:<port>"]` — playwright-cli's `open` has no
    direct flag for raw Chrome launch args, `--config=<path>` pointing at a
    `browser.launchOptions` file is the supported mechanism.
 3. Opens a named `playwright-cli` session (`-s <runid>`) with that config,
