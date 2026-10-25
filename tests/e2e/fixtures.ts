@@ -22,7 +22,7 @@ export const test = base.extend<Fixtures>({
       ),
     );
 
-    console.log(`Launching browser with host resolver rules to map npohle.github.io to 127.0.0.1:${port}`);
+    console.log(`Launching browser with host resolver rules to map rubisco.io to 127.0.0.1:${port}`);
 
     // Take headless / launch args from Playwright's own options rather than
     // hardcoding them, so `--headed` (and anything set under `use` in
@@ -33,7 +33,7 @@ export const test = base.extend<Fixtures>({
 
       args: [
         ...(launchOptions.args ?? []),
-        `--host-resolver-rules=MAP npohle.github.io 127.0.0.1:${port}`,
+        `--host-resolver-rules=MAP rubisco.io 127.0.0.1:${port}`,
       ],
     });
 

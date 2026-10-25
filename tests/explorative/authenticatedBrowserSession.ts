@@ -96,7 +96,7 @@ program
         writeFileSync(playwrightCliConfigFile, JSON.stringify({
           browser: {
             launchOptions: {
-              args: [`--host-resolver-rules=MAP npohle.github.io 127.0.0.1:${port}`],
+              args: [`--host-resolver-rules=MAP rubisco.io 127.0.0.1:${port}`],
             },
           },
         }));
@@ -106,7 +106,7 @@ program
           "-s", runid!, "open",
           `--config=${playwrightCliConfigFile}`,
           ...(options.headed ? ["--headed"] : []),
-          "https://npohle.github.io/everone/",
+          "https://rubisco.io/",
         ]);
         await runPlaywrightCli(["-s", runid!, "state-load", `tests/artefacts/${runid}/localstorage.json`]);
 

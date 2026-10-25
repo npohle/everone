@@ -58,7 +58,7 @@ test("SCRIBE-001: extract the text of a previewed PDF into a modal dialog", asyn
   expect(download.ok).toBe(true);
   const pdfBytes = Buffer.from(await download.arrayBuffer());
 
-  await page.goto(`https://npohle.github.io/everone/`);
+  await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
 
   try {
@@ -100,7 +100,7 @@ test("SCRIBE-001: extract the text of a previewed PDF into a modal dialog", asyn
 test("SCRIBE-002: the Scribe button is only shown for PDF documents", async ({ page }) => {
   const folderName = randomFolderName();
 
-  await page.goto(`https://npohle.github.io/everone/`);
+  await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
   const scribeBtn = page.locator(".viewer-bar").getByRole("button", { name: "Scribe" });
   await expect(scribeBtn).toBeHidden();

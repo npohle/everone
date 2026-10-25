@@ -5,7 +5,7 @@ import type { Page } from "@playwright/test";
 const randomFolderName = () => `e2e-test-${randomBytes(6).toString("hex")}`;
 
 async function openDocuments(page: Page) {
-  await page.goto(`https://npohle.github.io/everone/`);
+  await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
   await page.locator("#listing").getByText("Documents", { exact: true }).click();
   await expect(page.locator("#breadcrumbs")).toContainText("Documents");
@@ -135,7 +135,7 @@ test("DELETE-002: cancelling the Delete Folder dialog keeps the folder", async (
 test("DELETE-003: the Delete Folder button is visible but disabled at the root", async ({ page }) => {
   const deleteBtn = page.getByRole("button", { name: "Delete Folder" });
 
-  await page.goto(`https://npohle.github.io/everone/`);
+  await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
   await expect(page.locator("#listing").getByText("Documents", { exact: true })).toBeVisible();
   await expect(deleteBtn).toBeVisible();
