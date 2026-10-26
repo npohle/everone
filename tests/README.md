@@ -24,6 +24,8 @@ committed; loaded via `dotenv.config()` in `playwright.config.ts`):
 TEST_USERNAME=you@example.com
 TEST_PASSWORD=...
 TEST_TOTP_SEED=...   # base32 secret shared with the authenticator app
+TEST_CF_USERNAME=... # Cloudflare account for 09-cloudflare-auth.spec.ts
+TEST_CF_PASSWORD=...
 ```
 
 ## Running the suite
@@ -109,6 +111,23 @@ by the `test:e2e` npm script and also used as Playwright's own `outputDir`
 for traces — `trace: 'retain-on-failure'` on the `e2e` project) and are handy
 for debugging a failing run after the fact, alongside
 `localstorage.json`/`sessionstorage.json` from that run's sign-in.
+
+**Cloudflare sign-in** (`tests/e2e/09-cloudflare-auth.spec.ts`) is separate
+from the Microsoft one and not part of the saved storage state:
+
+* `CFAUTH-001` drives the real login form with `TEST_CF_USERNAME` /
+  `TEST_CF_PASSWORD`. Cloudflare's dashboard is behind its own bot
+  protection, which stops headless Chromium (a "Performing security
+  verification" page, or a failed Turnstile check on submit); the test is
+  skipped when that happens, with a `09-0x-bot-check.png` screenshot. Try
+  `npx playwright test 09-cloudflare --headed` on a machine with a display.
+* The file runs with tracing off, and `CFAUTH-001` clears the password field
+  before Playwright's failure snapshot, so the password never ends up in
+  `trace.zip` / `error-context.md`.
+* `CFAUTH-002` answers Cloudflare's authorize and token endpoints locally
+  (via `page.route`) as they answer on success, covering the app's side of
+  the Authorization Code + PKCE flow (`callback/` redeeming the code)
+  regardless of the bot protection.
 
 ## Exploring a signed-in session with `playwright-cli`
 

@@ -1,5 +1,6 @@
 import { config, isConfigured } from "./config.js";
 import * as auth from "./auth.js";
+import * as cfAuth from "./cloudflare-auth.js";
 import * as graph from "./graph.js";
 import * as viewer from "./viewer.js";
 import { mergeFiles } from "./upload-list.js";
@@ -10,6 +11,7 @@ const els = {
   signinCta: document.getElementById("signin-cta"),
   authBtn: document.getElementById("auth-btn"),
   user: document.getElementById("user"),
+  cfAuthBtn: document.getElementById("cf-auth-btn"),
   browser: document.getElementById("browser"),
   listing: document.getElementById("listing"),
   loading: document.getElementById("loading"),
@@ -530,7 +532,7 @@ async function showSignedIn(account) {
   els.browser.hidden = false;
   els.user.hidden = false;
   els.user.textContent = account.username || account.name || "";
-  els.authBtn.textContent = "Sign out";
+  setAuthButton(els.authBtn, "OneDrive", true);
   state.stack = [];
   await loadCurrent();
 }
@@ -540,7 +542,30 @@ function showSignedOut() {
   els.browser.hidden = true;
   els.user.hidden = true;
   els.user.textContent = "";
-  els.authBtn.textContent = "Sign in";
+  setAuthButton(els.authBtn, "OneDrive", false);
+}
+
+// Header buttons read just "Sign in" / "Sign out" next to their provider's
+// label; the accessible name spells out which sign-in they belong to.
+function setAuthButton(btn, provider, signedIn) {
+  btn.textContent = signedIn ? "Sign out" : "Sign in";
+  btn.setAttribute("aria-label", signedIn ? `Sign out of ${provider}` : `Sign in to ${provider}`);
+}
+
+// The Cloudflare sign-in is independent of the OneDrive one above: either can
+// be signed in or out without affecting the other.
+function renderCloudflare() {
+  setAuthButton(els.cfAuthBtn, "Cloudflare", cfAuth.isSignedIn());
+}
+
+function handleCloudflareAuth() {
+  if (cfAuth.isSignedIn()) {
+    cfAuth.signOut();
+    renderCloudflare();
+  } else {
+    // Navigates away to Cloudflare; callback/ redeems the code and returns.
+    cfAuth.signIn().catch((e) => showToast(`Cloudflare sign-in failed: ${e.message || e}`));
+  }
 }
 
 async function handleSignIn() {
@@ -573,6 +598,7 @@ function wireEvents() {
     if (auth.getAccount()) handleSignOut();
     else handleSignIn();
   });
+  els.cfAuthBtn.addEventListener("click", handleCloudflareAuth);
   els.upBtn.addEventListener("click", () => {
     if (state.stack.length === 0) return;
     state.stack.pop();
@@ -719,6 +745,11 @@ function initSplitDivider() {
 
 async function start() {
   wireEvents();
+  // callback/ completes the Cloudflare sign-in on its own page and leaves
+  // only a failure, if any, behind; the two sign-ins never share state.
+  const cfError = cfAuth.takeError();
+  if (cfError) showToast(cfError);
+  renderCloudflare();
   if (!isConfigured()) {
     els.configHint.hidden = false;
     return;

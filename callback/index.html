@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="referrer" content="no-referrer" />
+  <title>EverOne: Cloudflare sign-in</title>
+</head>
+<body>
+  <p>Completing Cloudflare sign-in…</p>
+  <!--
+    Cloudflare's OAuth redirect target (config.cloudflare.redirectUri). The
+    authorization code arrives in the query; cloudflare-auth.js verifies
+    `state`, redeems the code (PKCE) for a token and stores it, then returns
+    to the fixed, configured config.cloudflare.appUrl.
+  -->
+  <script type="module">
+    import { handleCallback } from "../cloudflare-auth.js";
+    handleCallback();
+  </script>
+</body>
+</html>

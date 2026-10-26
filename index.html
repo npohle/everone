@@ -18,8 +18,15 @@
     <nav id="breadcrumbs" class="breadcrumbs" aria-label="Breadcrumbs"></nav>
     <div class="topbar-actions">
       <input id="search" type="search" placeholder="Search OneDrive…" autocomplete="off" />
-      <span id="user" class="user" hidden></span>
-      <button id="auth-btn" type="button">Sign in</button>
+      <div class="auth-group" id="onedrive-auth" role="group" aria-label="OneDrive account">
+        <span class="auth-provider">OneDrive</span>
+        <span id="user" class="user" hidden></span>
+        <button id="auth-btn" type="button" aria-label="Sign in to OneDrive">Sign in</button>
+      </div>
+      <div class="auth-group" id="cloudflare-auth" role="group" aria-label="Cloudflare account">
+        <span class="auth-provider">Cloudflare</span>
+        <button id="cf-auth-btn" type="button" aria-label="Sign in to Cloudflare">Sign in</button>
+      </div>
     </div>
   </header>
 

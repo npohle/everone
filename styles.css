@@ -72,6 +72,7 @@ a:hover { text-decoration: underline; }
 
 .topbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 10px 16px;
@@ -96,7 +97,7 @@ a:hover { text-decoration: underline; }
 
 .breadcrumbs {
   flex: 1;
-  min-width: 0;
+  min-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -113,6 +114,26 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.auth-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
+.auth-provider {
+  font-weight: 600;
+}
+
+.auth-group button {
+  white-space: nowrap;
+}
+
+.auth-group .user {
+  max-width: 140px;
 }
 
 .user {

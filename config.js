@@ -22,6 +22,21 @@ export const config = {
   scopes: ["User.Read", "Files.ReadWrite.All"],
   graphBase: "https://graph.microsoft.com/v1.0",
   pageSize: 100,
+
+  // Cloudflare OAuth client, used by cloudflare-auth.js. Independent of the
+  // Microsoft sign-in above, which keeps authenticating OneDrive exclusively.
+  //
+  // A public client using the Authorization Code flow (with PKCE).
+  // redirectUri must match the client's registered redirect URL exactly;
+  // callback/index.html, served there, redeems the code and returns to appUrl.
+  cloudflare: {
+    clientId: "0b70dc1b060717a33f39ea09743b85df",
+    authorizeUrl: "https://dash.cloudflare.com/oauth2/auth",
+    tokenUrl: "https://dash.cloudflare.com/oauth2/token",
+    scopes: ["ai.read"],
+    redirectUri: "https://rubisco.io/callback",
+    appUrl: "https://rubisco.io/",
+  },
 };
 
 export const isConfigured = () =>
