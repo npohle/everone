@@ -171,6 +171,26 @@ export function signOut() {
   storage().removeItem(TOKEN_KEY);
 }
 
+// The first of the Cloudflare accounts the signed-in user has access to
+// (https://developers.cloudflare.com/api/resources/accounts/methods/list/),
+// as { id, name }, or null when there are none. Throws on a failed request.
+export async function fetchFirstAccount(accessToken, cf = config.cloudflare, fetchImpl = globalThis.fetch) {
+  const res = await fetchImpl(`${cf.apiBase}/accounts`, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.success === false) {
+    const reason = (body.errors || []).map((e) => e.message).filter(Boolean).join("; ");
+    throw new Error(reason || `accounts request failed (HTTP ${res.status})`);
+  }
+  const first = (body.result || [])[0];
+  return first ? { id: first.id, name: first.name } : null;
+}
+
+export function formatAccount(account) {
+  return `${account.name} (${account.id})`;
+}
+
 export function getToken() {
   const token = readToken(storage());
   if (!token) throw new Error("Not signed in to Cloudflare");

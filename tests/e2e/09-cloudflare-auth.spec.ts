@@ -136,6 +136,32 @@ test("CFAUTH-002: Cloudflare token obtained via the code flow is held alongside 
     });
   });
 
+  // Accounts list (https://developers.cloudflare.com/api/resources/accounts/methods/list/),
+  // with more than one account: the header shows the first.
+  const accountsAuth: string[] = [];
+  await page.route("https://api.cloudflare.com/client/v4/accounts**", async (route) => {
+    const cors = {
+      "access-control-allow-origin": "https://rubisco.io",
+      "access-control-allow-headers": "authorization, accept",
+    };
+    if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+    accountsAuth.push(route.request().headers()["authorization"]);
+    await route.fulfill({
+      status: 200,
+      headers: cors,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        errors: [],
+        messages: [],
+        result: [
+          { id: "023e105f4ecef8ad9ca31a8372d0c353", name: "E2E Primary Account", type: "standard" },
+          { id: "9a7806061c88ada191ed06f989cc3dac", name: "E2E Second Account", type: "standard" },
+        ],
+      }),
+    });
+  });
+
   await cloudflare.getByRole("button", { name: "Sign in to Cloudflare" }).click();
   await page.waitForURL("https://rubisco.io/");
 
@@ -156,6 +182,13 @@ test("CFAUTH-002: Cloudflare token obtained via the code flow is held alongside 
 
   await expect(page.getByText("Loading")).not.toBeVisible();
   await expectBothSignedIn(page);
+
+  // The header shows the first account's name and ID, fetched with the token.
+  const account = cloudflare.getByText("E2E Primary Account", { exact: true });
+  await expect(account).toBeVisible();
+  await expect(cloudflare.getByText("023e105f4ecef8ad9ca31a8372d0c353", { exact: true })).toBeVisible();
+  await expect(cloudflare.getByText("E2E Second Account")).toHaveCount(0);
+  expect(accountsAuth[0]).toBe("Bearer e2e-cloudflare-token");
   await page.screenshot({ path: `${artefactsDir}/09-11-both-signed-in.png` });
 
   // Two independent tokens: MSAL's cache and the Cloudflare token side by side.
@@ -167,8 +200,10 @@ test("CFAUTH-002: Cloudflare token obtained via the code flow is held alongside 
   await page.reload();
   await expect(page.getByText("Loading")).not.toBeVisible();
   await expectBothSignedIn(page);
+  await expect(account).toBeVisible();
 
   await signOutOfCloudflareOnly(page);
+  await expect(account).not.toBeVisible();
   expect(await page.evaluate(() => window.sessionStorage.getItem("cloudflare.token"))).toBeNull();
   await page.screenshot({ path: `${artefactsDir}/09-12-cloudflare-signed-out.png` });
 });

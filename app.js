@@ -12,6 +12,9 @@ const els = {
   authBtn: document.getElementById("auth-btn"),
   user: document.getElementById("user"),
   cfAuthBtn: document.getElementById("cf-auth-btn"),
+  cfAccount: document.getElementById("cf-account"),
+  cfAccountName: document.getElementById("cf-account-name"),
+  cfAccountId: document.getElementById("cf-account-id"),
   browser: document.getElementById("browser"),
   listing: document.getElementById("listing"),
   loading: document.getElementById("loading"),
@@ -554,8 +557,33 @@ function setAuthButton(btn, provider, signedIn) {
 
 // The Cloudflare sign-in is independent of the OneDrive one above: either can
 // be signed in or out without affecting the other.
+//
+// Once signed in, the header also shows the name and ID of the first
+// Cloudflare account the user has access to.
+let cfAccountRequest = 0;
+
 function renderCloudflare() {
-  setAuthButton(els.cfAuthBtn, "Cloudflare", cfAuth.isSignedIn());
+  const signedIn = cfAuth.isSignedIn();
+  setAuthButton(els.cfAuthBtn, "Cloudflare", signedIn);
+  showCloudflareAccount(null);
+  const request = ++cfAccountRequest;
+  if (!signedIn) return;
+  cfAuth
+    .fetchFirstAccount(cfAuth.getToken())
+    .then((account) => {
+      // Ignore a response that arrives after a sign-out (or a newer request).
+      if (request === cfAccountRequest && account) showCloudflareAccount(account);
+    })
+    .catch((e) => {
+      if (request === cfAccountRequest) showToast(`Couldn't load Cloudflare account: ${e.message || e}`);
+    });
+}
+
+function showCloudflareAccount(account) {
+  els.cfAccount.hidden = !account;
+  els.cfAccountName.textContent = account ? account.name : "";
+  els.cfAccountId.textContent = account ? account.id : "";
+  els.cfAccount.title = account ? cfAuth.formatAccount(account) : "";
 }
 
 function handleCloudflareAuth() {

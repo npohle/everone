@@ -8,6 +8,8 @@ import {
   readToken,
   randomString,
   codeChallenge,
+  fetchFirstAccount,
+  formatAccount,
   TOKEN_KEY,
   STATE_KEY,
   VERIFIER_KEY,
@@ -142,4 +144,38 @@ test("readToken drops expired and malformed tokens", () => {
   assert.equal(expired.getItem(TOKEN_KEY), null);
   assert.equal(readToken(memoryStorage({ [TOKEN_KEY]: "{oops" })), null);
   assert.equal(readToken(memoryStorage()), null);
+});
+
+test("fetchFirstAccount lists the user's accounts with the OAuth token and returns the first", async () => {
+  const fetchImpl = fakeFetch(200, {
+    success: true,
+    result: [
+      { id: "023e105f4ecef8ad9ca31a8372d0c353", name: "Primary Account" },
+      { id: "1111", name: "Second Account" },
+    ],
+  });
+  const account = await fetchFirstAccount("t", config.cloudflare, fetchImpl);
+  assert.deepEqual(account, { id: "023e105f4ecef8ad9ca31a8372d0c353", name: "Primary Account" });
+
+  assert.equal(fetchImpl.calls.length, 1);
+  const { url, init } = fetchImpl.calls[0];
+  assert.equal(new URL(url).origin + new URL(url).pathname, `${config.cloudflare.apiBase}/accounts`);
+  assert.equal(init.headers.Authorization, "Bearer t");
+});
+
+test("fetchFirstAccount returns null when the user has no accounts", async () => {
+  assert.equal(await fetchFirstAccount("t", config.cloudflare, fakeFetch(200, { success: true, result: [] })), null);
+});
+
+test("fetchFirstAccount throws Cloudflare's error on a failed request", async () => {
+  await assert.rejects(
+    fetchFirstAccount("t", config.cloudflare,
+      fakeFetch(403, { success: false, errors: [{ code: 10000, message: "Authentication error" }] })),
+    /Authentication error/,
+  );
+  await assert.rejects(fetchFirstAccount("t", config.cloudflare, fakeFetch(500, {})), /HTTP 500/);
+});
+
+test("formatAccount shows the account's name and ID", () => {
+  assert.equal(formatAccount({ id: "abc", name: "Acme" }), "Acme (abc)");
 });
