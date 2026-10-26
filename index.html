@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>OneDrive Browser</title>
+  <title>EverOne: Browse Microsoft OneDrive</title>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📁</text></svg>" />
   <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"
@@ -13,7 +13,7 @@
   <header class="topbar">
     <div class="brand">
       <span class="logo" aria-hidden="true">☁</span>
-      <span>OneDrive Browser</span>
+      <span>EverOne: Browse Microsoft OneDrive</span>
     </div>
     <nav id="breadcrumbs" class="breadcrumbs" aria-label="Breadcrumbs"></nav>
     <div class="topbar-actions">
@@ -36,6 +36,9 @@
     <section id="browser" class="browser" hidden>
       <div class="toolbar">
         <button id="up-btn" type="button" title="Up one level">↑ Up</button>
+        <button id="new-folder-btn" type="button" title="Create a folder here">New Folder</button>
+        <button id="delete-folder-btn" type="button" title="Delete this folder (only when empty)" disabled>Delete Folder</button>
+        <button id="upload-btn" type="button" title="Upload files into this folder">Upload</button>
         <select id="sort">
           <option value="name-desc">Name (Z→A)</option>
           <option value="name-asc">Name (A→Z)</option>
@@ -57,6 +60,8 @@
         <div id="viewer" class="preview-pane">
           <div class="viewer-bar">
             <span id="viewer-title" class="viewer-title">Preview</span>
+            <button id="viewer-scribe" type="button" class="viewer-scribe"
+                    title="Extract the text content of this PDF with scribe.js" hidden>Scribe</button>
             <div class="viewer-actions">
               <a id="viewer-download" href="#" download hidden>Download</a>
               <a id="viewer-open" href="#" target="_blank" rel="noopener" hidden>Open in OneDrive</a>
@@ -69,6 +74,58 @@
       </div>
     </section>
   </main>
+
+  <dialog id="new-folder-dialog" class="modal" aria-labelledby="new-folder-title">
+    <form id="new-folder-form" method="dialog">
+      <h2 id="new-folder-title">New Folder</h2>
+      <p class="modal-path">Create in: <code id="new-folder-path"></code></p>
+      <label for="new-folder-name">Folder name</label>
+      <input id="new-folder-name" type="text" autocomplete="off" required />
+      <div class="modal-actions">
+        <button id="new-folder-cancel" type="button">Cancel</button>
+        <button id="new-folder-create" type="submit" class="primary">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="delete-folder-dialog" class="modal" aria-labelledby="delete-folder-title">
+    <form id="delete-folder-form" method="dialog">
+      <h2 id="delete-folder-title">Delete Folder</h2>
+      <p class="modal-path">Delete: <code id="delete-folder-path"></code></p>
+      <div class="modal-actions">
+        <button id="delete-folder-cancel" type="button">Cancel</button>
+        <button id="delete-folder-confirm" type="submit" class="danger">Delete</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="upload-dialog" class="modal upload-modal" aria-labelledby="upload-title">
+    <form id="upload-form" method="dialog">
+      <h2 id="upload-title">Upload Files</h2>
+      <p class="modal-path">Upload to: <code id="upload-path"></code></p>
+      <input id="upload-input" type="file" multiple hidden />
+      <button id="upload-select" type="button">File Selector</button>
+      <ul id="upload-list" class="upload-list" aria-label="Files to upload"></ul>
+      <div class="modal-actions">
+        <button id="upload-cancel" type="button">Cancel</button>
+        <button id="upload-start" type="submit" class="primary">Upload</button>
+        <button id="upload-close" type="button" class="primary" hidden>Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="scribe-dialog" class="modal scribe-modal" aria-labelledby="scribe-title">
+    <form method="dialog">
+      <h2 id="scribe-title">Extracted Text Content</h2>
+      <p class="modal-path">Source: <code id="scribe-source"></code></p>
+      <p id="scribe-status" class="scribe-status" role="status"></p>
+      <textarea id="scribe-text" class="scribe-text" readonly
+                aria-label="Extracted text" spellcheck="false"></textarea>
+      <div class="modal-actions">
+        <button id="scribe-close" type="submit" class="primary">Close</button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="toast" class="toast" hidden></div>
 

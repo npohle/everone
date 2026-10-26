@@ -11,12 +11,21 @@ async function graphFetch(url, init = {}) {
       ...(init.headers || {}),
     },
   });
-  if (!res.ok) {
-    let detail = "";
-    try { detail = (await res.json()).error?.message || ""; } catch {}
-    throw new Error(`Graph ${res.status}: ${detail || res.statusText}`);
-  }
+  if (!res.ok) throw await responseError(res);
   return res;
+}
+
+// Keep the raw response body on the error so callers can surface the full
+// OneDrive error payload (code, innerError, etc.), not just the message.
+async function responseError(res) {
+  let body = "";
+  try { body = await res.text(); } catch {}
+  let detail = "";
+  try { detail = JSON.parse(body).error?.message || ""; } catch {}
+  const err = new Error(`Graph ${res.status}: ${detail || res.statusText}`);
+  err.status = res.status;
+  err.body = body;
+  return err;
 }
 
 async function graphJson(url, init) {
@@ -66,6 +75,85 @@ export async function getItem(itemId) {
 export async function getRoot() {
   const url = `${config.graphBase}/me/drive/root?$select=${SELECT}`;
   return graphJson(url);
+}
+
+// Creates a folder under parentId (or the drive root when null). Uses
+// conflictBehavior "fail" so an existing name surfaces as an error instead of
+// being silently renamed.
+export async function createFolder(parentId, name) {
+  const path = parentId
+    ? `/me/drive/items/${encodeURIComponent(parentId)}/children`
+    : `/me/drive/root/children`;
+  return graphJson(`${config.graphBase}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      folder: {},
+      "@microsoft.graph.conflictBehavior": "fail",
+    }),
+  });
+}
+
+// Deletes a folder, but only if OneDrive reports it has no children. Graph's
+// DELETE is recursive, so the emptiness check is repeated here against fresh
+// server state rather than trusting whatever listing the UI last rendered.
+export async function deleteEmptyFolder(itemId) {
+  const item = await getItem(itemId);
+  if (!item.folder) throw new Error(`"${item.name}" is not a folder`);
+  if (item.folder.childCount > 0) {
+    throw new Error(`"${item.name}" is not empty (${item.folder.childCount} item${item.folder.childCount === 1 ? "" : "s"})`);
+  }
+  await graphFetch(`${config.graphBase}/me/drive/items/${encodeURIComponent(itemId)}`, {
+    method: "DELETE",
+  });
+}
+
+// Graph's simple upload is only recommended up to 4 MB; anything larger goes
+// through an upload session in chunks. Chunk sizes must be multiples of
+// 320 KiB.
+const SIMPLE_UPLOAD_MAX = 4 * 1024 * 1024;
+const UPLOAD_CHUNK_SIZE = 320 * 1024 * 32; // 10 MiB
+
+// Uploads a File into parentId (or the drive root when null) under its own
+// name. Uses conflictBehavior "fail" so an existing name surfaces as an error
+// instead of overwriting or silently renaming.
+export async function uploadFile(parentId, file) {
+  const parentPath = parentId
+    ? `/me/drive/items/${encodeURIComponent(parentId)}:`
+    : `/me/drive/root:`;
+  const itemPath = `${config.graphBase}${parentPath}/${encodeURIComponent(file.name)}:`;
+
+  if (file.size <= SIMPLE_UPLOAD_MAX) {
+    return graphJson(`${itemPath}/content?@microsoft.graph.conflictBehavior=fail`, {
+      method: "PUT",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+  }
+
+  const session = await graphJson(`${itemPath}/createUploadSession`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "fail" } }),
+  });
+  let offset = 0;
+  while (true) {
+    const end = Math.min(offset + UPLOAD_CHUNK_SIZE, file.size);
+    // The pre-authenticated uploadUrl must not receive an Authorization header.
+    const res = await fetch(session.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Range": `bytes ${offset}-${end - 1}/${file.size}` },
+      body: file.slice(offset, end),
+    });
+    if (!res.ok) {
+      const err = await responseError(res);
+      fetch(session.uploadUrl, { method: "DELETE" }).catch(() => {});
+      throw err;
+    }
+    if (end >= file.size) return res.json();
+    offset = end;
+  }
 }
 
 export async function search(query, sort) {

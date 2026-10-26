@@ -2,6 +2,7 @@ import { config, isConfigured } from "./config.js";
 import * as auth from "./auth.js";
 import * as graph from "./graph.js";
 import * as viewer from "./viewer.js";
+import { mergeFiles } from "./upload-list.js";
 
 const els = {
   signedOut: document.getElementById("signed-out"),
@@ -19,6 +20,29 @@ const els = {
   search: document.getElementById("search"),
   breadcrumbs: document.getElementById("breadcrumbs"),
   toast: document.getElementById("toast"),
+  newFolderBtn: document.getElementById("new-folder-btn"),
+  newFolderDialog: document.getElementById("new-folder-dialog"),
+  newFolderForm: document.getElementById("new-folder-form"),
+  newFolderPath: document.getElementById("new-folder-path"),
+  newFolderName: document.getElementById("new-folder-name"),
+  newFolderCancel: document.getElementById("new-folder-cancel"),
+  newFolderCreate: document.getElementById("new-folder-create"),
+  deleteFolderBtn: document.getElementById("delete-folder-btn"),
+  deleteFolderDialog: document.getElementById("delete-folder-dialog"),
+  deleteFolderForm: document.getElementById("delete-folder-form"),
+  deleteFolderPath: document.getElementById("delete-folder-path"),
+  deleteFolderCancel: document.getElementById("delete-folder-cancel"),
+  deleteFolderConfirm: document.getElementById("delete-folder-confirm"),
+  uploadBtn: document.getElementById("upload-btn"),
+  uploadDialog: document.getElementById("upload-dialog"),
+  uploadForm: document.getElementById("upload-form"),
+  uploadPath: document.getElementById("upload-path"),
+  uploadInput: document.getElementById("upload-input"),
+  uploadSelect: document.getElementById("upload-select"),
+  uploadList: document.getElementById("upload-list"),
+  uploadCancel: document.getElementById("upload-cancel"),
+  uploadStart: document.getElementById("upload-start"),
+  uploadClose: document.getElementById("upload-close"),
 };
 
 const state = {
@@ -33,13 +57,28 @@ const state = {
   loadId: 0,
   // Currently selected file id (the one being previewed).
   selectedId: null,
+  // True while a folder listing or search request is in flight.
+  loading: false,
+  // Upload dialog: target folder, picked files, and per-file result keyed by
+  // name. phase is "select" (editable), "uploading" (read-only) or "done".
+  upload: { folder: null, files: [], results: new Map(), phase: "select" },
 };
 
-function showToast(msg) {
+function showToast(msg, ms = 4000) {
   els.toast.textContent = msg;
   els.toast.hidden = false;
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => { els.toast.hidden = true; }, 4000);
+  showToast._t = setTimeout(() => { els.toast.hidden = true; }, ms);
+}
+
+// Pretty-prints the raw Graph error body (see graph.js) when it's JSON.
+function errorDump(err) {
+  if (!err.body) return err.message || String(err);
+  try {
+    return `${err.message}\n${JSON.stringify(JSON.parse(err.body), null, 2)}`;
+  } catch {
+    return `${err.message}\n${err.body}`;
+  }
 }
 
 function formatBytes(n) {
@@ -186,6 +225,182 @@ function setStatus(text) {
   els.status.textContent = text;
 }
 
+function currentFolderPath() {
+  return "/" + state.stack.map((f) => f.name).join("/");
+}
+
+function openNewFolderDialog() {
+  els.newFolderPath.textContent = currentFolderPath();
+  els.newFolderName.value = "";
+  els.newFolderCreate.disabled = false;
+  els.newFolderDialog.showModal();
+  els.newFolderName.focus();
+}
+
+async function createFolder() {
+  const name = els.newFolderName.value.trim();
+  if (!name) return;
+  const folder = state.stack[state.stack.length - 1];
+  els.newFolderCreate.disabled = true;
+  try {
+    await graph.createFolder(folder ? folder.id : null, name);
+  } catch (err) {
+    // Close first: a modal <dialog> sits in the top layer and would cover
+    // the toast behind its backdrop.
+    els.newFolderDialog.close();
+    showToast(`Failed to create folder "${name}":\n${errorDump(err)}`, 15000);
+    return;
+  }
+  els.newFolderDialog.close();
+  await loadCurrent();
+}
+
+// A folder can only be deleted when it is empty: no files, no subfolders.
+// The root can't be deleted, and while loading or showing search results the
+// listing doesn't reflect the current folder's contents, so stay disabled.
+function updateDeleteFolderBtn() {
+  els.deleteFolderBtn.disabled =
+    state.stack.length === 0 ||
+    state.loading ||
+    !!state.searchQuery ||
+    state.items.length > 0 ||
+    !!state.nextLink;
+}
+
+function openDeleteFolderDialog() {
+  if (els.deleteFolderBtn.disabled) return;
+  els.deleteFolderPath.textContent = currentFolderPath();
+  els.deleteFolderConfirm.disabled = false;
+  els.deleteFolderDialog.showModal();
+}
+
+async function deleteFolder() {
+  const folder = state.stack[state.stack.length - 1];
+  if (!folder) return;
+  const path = currentFolderPath();
+  els.deleteFolderConfirm.disabled = true;
+  try {
+    await graph.deleteEmptyFolder(folder.id);
+  } catch (err) {
+    // Close first: a modal <dialog> sits in the top layer and would cover
+    // the toast behind its backdrop.
+    els.deleteFolderDialog.close();
+    showToast(`Failed to delete folder "${path}":\n${errorDump(err)}`, 15000);
+    return;
+  }
+  els.deleteFolderDialog.close();
+  state.stack.pop();
+  await loadCurrent();
+}
+
+function openUploadDialog() {
+  state.upload = {
+    folder: state.stack[state.stack.length - 1] || null,
+    files: [],
+    results: new Map(),
+    phase: "select",
+  };
+  els.uploadPath.textContent = currentFolderPath();
+  els.uploadInput.value = "";
+  renderUploadDialog();
+  els.uploadDialog.showModal();
+}
+
+const UPLOAD_STATUS = {
+  uploading: { cls: "progress", label: "Uploading", text: "" },
+  success: { cls: "success", label: "Uploaded", text: "✓" },
+  failed: { cls: "failed", label: "Upload failed", text: "✗" },
+};
+
+function renderUploadDialog() {
+  const { files, results, phase } = state.upload;
+  els.uploadList.replaceChildren();
+  for (const file of files) {
+    const li = document.createElement("li");
+    const name = document.createElement("span");
+    name.className = "upload-name";
+    name.textContent = file.name;
+    li.appendChild(name);
+
+    if (phase === "select") {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "upload-remove";
+      remove.textContent = "✕";
+      remove.setAttribute("aria-label", `Remove ${file.name}`);
+      remove.title = "Remove";
+      remove.addEventListener("click", () => {
+        state.upload.files = state.upload.files.filter((f) => f !== file);
+        renderUploadDialog();
+      });
+      li.appendChild(remove);
+    } else {
+      const result = results.get(file.name) || { status: "uploading" };
+      const s = UPLOAD_STATUS[result.status];
+      const icon = document.createElement("span");
+      icon.className = `upload-status ${s.cls}`;
+      icon.setAttribute("role", "img");
+      icon.setAttribute("aria-label", s.label);
+      icon.title = result.error ? `${s.label}: ${result.error}` : s.label;
+      icon.textContent = s.text;
+      li.appendChild(icon);
+    }
+    els.uploadList.appendChild(li);
+  }
+
+  const editable = phase === "select";
+  els.uploadSelect.disabled = !editable;
+  els.uploadCancel.disabled = !editable;
+  els.uploadStart.disabled = !editable || files.length === 0;
+  els.uploadStart.hidden = phase === "done";
+  els.uploadClose.hidden = phase !== "done";
+}
+
+function addUploadFiles(fileList) {
+  if (state.upload.phase !== "select") return;
+  state.upload.files = mergeFiles(state.upload.files, fileList);
+  // Reset so picking the same file again still fires "change".
+  els.uploadInput.value = "";
+  renderUploadDialog();
+}
+
+// Uploads a few files at a time; each one reports success or failure on its
+// own, so one rejected file doesn't stop the rest.
+const UPLOAD_CONCURRENCY = 3;
+
+async function startUpload() {
+  const upload = state.upload;
+  if (upload.phase !== "select" || upload.files.length === 0) return;
+  upload.phase = "uploading";
+  renderUploadDialog();
+
+  const queue = upload.files.slice();
+  const worker = async () => {
+    while (queue.length) {
+      const file = queue.shift();
+      try {
+        await graph.uploadFile(upload.folder ? upload.folder.id : null, file);
+        upload.results.set(file.name, { status: "success" });
+      } catch (err) {
+        upload.results.set(file.name, { status: "failed", error: errorDump(err) });
+      }
+      if (state.upload === upload) renderUploadDialog();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, queue.length) }, worker));
+
+  upload.phase = "done";
+  if (state.upload !== upload) return;
+  renderUploadDialog();
+  if (els.uploadDialog.open) {
+    els.uploadClose.focus();
+  } else {
+    // Chrome lets a repeated Escape bypass the cancel guard; the dialog is
+    // already gone, so refresh here instead of on Close.
+    loadCurrent();
+  }
+}
+
 function onItemClick(item) {
   if (item.folder) {
     state.stack.push({ id: item.id, name: item.name });
@@ -217,6 +432,8 @@ async function loadCurrent() {
   state.selectedId = null;
   viewer.clear();
   const id = ++state.loadId;
+  state.loading = true;
+  updateDeleteFolderBtn();
   els.loading.hidden = false;
   els.loadMore.hidden = true;
   setStatus("");
@@ -238,7 +455,11 @@ async function loadCurrent() {
     state.nextLink = null;
     renderListing();
   } finally {
-    if (id === state.loadId) els.loading.hidden = true;
+    if (id === state.loadId) {
+      els.loading.hidden = true;
+      state.loading = false;
+      updateDeleteFolderBtn();
+    }
   }
 }
 
@@ -265,6 +486,8 @@ async function runSearch(query) {
   const id = ++state.loadId;
   state.searchQuery = query;
   state.selectedId = null;
+  state.loading = true;
+  updateDeleteFolderBtn();
   viewer.clear();
   els.loading.hidden = false;
   els.loadMore.hidden = true;
@@ -286,7 +509,11 @@ async function runSearch(query) {
     if (id !== state.loadId) return;
     showToast(err.message || "Search failed");
   } finally {
-    if (id === state.loadId) els.loading.hidden = true;
+    if (id === state.loadId) {
+      els.loading.hidden = true;
+      state.loading = false;
+      updateDeleteFolderBtn();
+    }
   }
 }
 
@@ -357,6 +584,36 @@ function wireEvents() {
     // through the @odata.nextLink for subsequent pages.
     if (state.searchQuery) runSearch(state.searchQuery);
     else loadCurrent();
+  });
+  els.newFolderBtn.addEventListener("click", openNewFolderDialog);
+  els.newFolderCancel.addEventListener("click", () => els.newFolderDialog.close());
+  els.newFolderForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    createFolder();
+  });
+  els.deleteFolderBtn.addEventListener("click", openDeleteFolderDialog);
+  els.deleteFolderCancel.addEventListener("click", () => els.deleteFolderDialog.close());
+  els.deleteFolderForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    deleteFolder();
+  });
+  els.uploadBtn.addEventListener("click", openUploadDialog);
+  els.uploadSelect.addEventListener("click", () => els.uploadInput.click());
+  els.uploadInput.addEventListener("change", () => addUploadFiles(els.uploadInput.files));
+  els.uploadCancel.addEventListener("click", () => els.uploadDialog.close());
+  els.uploadClose.addEventListener("click", () => els.uploadDialog.close());
+  els.uploadForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    startUpload();
+  });
+  // Escape must not dismiss the dialog while it is read-only mid-upload.
+  els.uploadDialog.addEventListener("cancel", (e) => {
+    if (state.upload.phase === "uploading") e.preventDefault();
+  });
+  // Once anything was uploaded, closing (via Close or Escape) refreshes the
+  // listing so the new files show up.
+  els.uploadDialog.addEventListener("close", () => {
+    if (state.upload.phase === "done") loadCurrent();
   });
   els.loadMore.addEventListener("click", loadMore);
   els.search.addEventListener("input", debounce((e) => {
