@@ -17,6 +17,23 @@ import https from "node:https";
 import net from "node:net";
 import path from "node:path";
 import fs from "node:fs";
+import { config } from "../../../config.js";
+
+// Cloudflare's OAuth client redirects to config.cloudflare.redirectUri, whose
+// host may differ from the app's (see config.js) — serve and map it too, so
+// callback/index.html is reachable there during the Cloudflare sign-in.
+const CLOUDFLARE_CALLBACK_HOST = new URL(config.cloudflare.redirectUri).hostname;
+
+/** Every hostname Caddy serves the repo root for, the app's own first. */
+export function servedHosts(host = "rubisco.io"): string[] {
+  return [...new Set([host, CLOUDFLARE_CALLBACK_HOST])];
+}
+
+/** Chromium --host-resolver-rules arg pointing every served host at Caddy. */
+export function hostResolverRulesArg(port: number, host = "rubisco.io"): string {
+  const rules = servedHosts(host).map((h) => `MAP ${h} 127.0.0.1:${port}`);
+  return `--host-resolver-rules=${rules.join(",")}`;
+}
 
 const CANDIDATE_PORTS = [1443, 2443, 3443, 4443, 5443, 6443, 7443, 8443, 9443];
 
@@ -91,7 +108,7 @@ export async function startCaddy(
   const port = await findFreePort(CANDIDATE_PORTS);
   const root = repoRoot();
   const caddyConfig = [
-    `https://127.0.0.1:${port}, https://${host}:${port} {`,
+    `https://127.0.0.1:${port}, ${servedHosts(host).map((h) => `https://${h}:${port}`).join(", ")} {`,
     `  tls internal`,
     `  root * ${root}/`,
     `  file_server`,

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="referrer" content="no-referrer" />
+  <title>EverOne: Cloudflare sign-in</title>
+</head>
+<body>
+  <p>Completing Cloudflare sign-in…</p>
+  <!--
+    Cloudflare's OAuth redirect target (config.cloudflare.redirectUri). The
+    access token arrives in the URL fragment; hand it to the app, which may
+    live on a different origin than this page, at the fixed, configured
+    config.cloudflare.appUrl only — never at a URL taken from the request, so
+    the token can't be forwarded anywhere else. cloudflare-auth.js then
+    verifies `state` and stores the token.
+  -->
+  <script type="module">
+    import { config } from "../config.js";
+    window.location.replace(config.cloudflare.appUrl + window.location.hash);
+  </script>
+</body>
+</html>

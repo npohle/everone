@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import pc from 'picocolors';
-import { startCaddy, stopCaddy } from "../e2e/lib/caddy.ts";
+import { startCaddy, stopCaddy, hostResolverRulesArg } from "../e2e/lib/caddy.ts";
 
 const ARTEFACTS_DIR = "tests/artefacts";
 
@@ -96,7 +96,7 @@ program
         writeFileSync(playwrightCliConfigFile, JSON.stringify({
           browser: {
             launchOptions: {
-              args: [`--host-resolver-rules=MAP rubisco.io 127.0.0.1:${port}`],
+              args: [hostResolverRulesArg(port)],
             },
           },
         }));
