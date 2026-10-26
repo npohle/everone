@@ -136,6 +136,26 @@ a:hover { text-decoration: underline; }
   max-width: 140px;
 }
 
+/* Cloudflare account: name above its (32-char hex) ID. */
+.cf-account {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  color: var(--muted);
+  max-width: 260px;
+}
+.cf-account[hidden] { display: none; }
+.cf-account-name,
+.cf-account-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cf-account-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
 .user {
   color: var(--muted);
   max-width: 200px;

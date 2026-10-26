@@ -127,7 +127,9 @@ from the Microsoft one and not part of the saved storage state:
 * `CFAUTH-002` answers Cloudflare's authorize and token endpoints locally
   (via `page.route`) as they answer on success, covering the app's side of
   the Authorization Code + PKCE flow (`callback/` redeeming the code)
-  regardless of the bot protection.
+  regardless of the bot protection. It also answers the Cloudflare API's
+  accounts list (two accounts) and checks the header shows the first one's
+  name and ID.
 
 ## Exploring a signed-in session with `playwright-cli`
 
