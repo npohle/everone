@@ -6,7 +6,6 @@ import {
 } from '@playwright/test';
 import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
-import { hostResolverRulesArg } from './lib/caddy.ts';
 
 type Fixtures = {
   browser: Browser;
@@ -23,8 +22,7 @@ export const test = base.extend<Fixtures>({
       ),
     );
 
-    const hostResolverRules = hostResolverRulesArg(port);
-    console.log(`Launching browser with ${hostResolverRules}`);
+    console.log(`Launching browser with host resolver rules to map rubisco.io to 127.0.0.1:${port}`);
 
     // Take headless / launch args from Playwright's own options rather than
     // hardcoding them, so `--headed` (and anything set under `use` in
@@ -35,7 +33,7 @@ export const test = base.extend<Fixtures>({
 
       args: [
         ...(launchOptions.args ?? []),
-        hostResolverRules,
+        `--host-resolver-rules=MAP rubisco.io 127.0.0.1:${port}`,
       ],
     });
 

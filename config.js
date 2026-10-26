@@ -26,17 +26,15 @@ export const config = {
   // Cloudflare OAuth client, used by cloudflare-auth.js. Independent of the
   // Microsoft sign-in above, which keeps authenticating OneDrive exclusively.
   //
-  // The client only allows the implicit grant (response_type=token), and
-  // redirectUri must match the client's registered redirect URL exactly.
-  // NOTE: the registration currently lists https://rubsico.io/callback
-  // ("rubsico", not "rubisco"), so that's what is requested here. Once the
-  // registration is corrected, change this to https://rubisco.io/callback.
-  // callback/index.html, served at redirectUri, forwards the token to appUrl.
+  // A public client using the Authorization Code flow (with PKCE).
+  // redirectUri must match the client's registered redirect URL exactly;
+  // callback/index.html, served there, redeems the code and returns to appUrl.
   cloudflare: {
     clientId: "0b70dc1b060717a33f39ea09743b85df",
     authorizeUrl: "https://dash.cloudflare.com/oauth2/auth",
+    tokenUrl: "https://dash.cloudflare.com/oauth2/token",
     scopes: ["ai.read"],
-    redirectUri: "https://rubsico.io/callback",
+    redirectUri: "https://rubisco.io/callback",
     appUrl: "https://rubisco.io/",
   },
 };

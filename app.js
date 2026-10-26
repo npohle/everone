@@ -563,8 +563,8 @@ function handleCloudflareAuth() {
     cfAuth.signOut();
     renderCloudflare();
   } else {
-    // Navigates away to Cloudflare; the token comes back via callback/.
-    cfAuth.signIn();
+    // Navigates away to Cloudflare; callback/ redeems the code and returns.
+    cfAuth.signIn().catch((e) => showToast(`Cloudflare sign-in failed: ${e.message || e}`));
   }
 }
 
@@ -745,10 +745,10 @@ function initSplitDivider() {
 
 async function start() {
   wireEvents();
-  // Pick up a Cloudflare token handed back via callback/ before MSAL looks at
-  // the URL; the two sign-ins never share state.
-  const cfOutcome = cfAuth.handleRedirect();
-  if (cfOutcome && cfOutcome.error) showToast(cfOutcome.error);
+  // callback/ completes the Cloudflare sign-in on its own page and leaves
+  // only a failure, if any, behind; the two sign-ins never share state.
+  const cfError = cfAuth.takeError();
+  if (cfError) showToast(cfError);
   renderCloudflare();
   if (!isConfigured()) {
     els.configHint.hidden = false;

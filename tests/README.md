@@ -115,11 +115,6 @@ for debugging a failing run after the fact, alongside
 **Cloudflare sign-in** (`tests/e2e/09-cloudflare-auth.spec.ts`) is separate
 from the Microsoft one and not part of the saved storage state:
 
-* Cloudflare's OAuth client redirects to `config.cloudflare.redirectUri`
-  (`callback/index.html`), whose host may differ from the app's (currently
-  `rubsico.io`, see `config.js`). `tests/e2e/lib/caddy.ts` serves the repo
-  root for that host too, and `hostResolverRulesArg()` maps it to Caddy
-  alongside `rubisco.io`.
 * `CFAUTH-001` drives the real login form with `TEST_CF_USERNAME` /
   `TEST_CF_PASSWORD`. Cloudflare's dashboard is behind its own bot
   protection, which stops headless Chromium (a "Performing security
@@ -129,9 +124,10 @@ from the Microsoft one and not part of the saved storage state:
 * The file runs with tracing off, and `CFAUTH-001` clears the password field
   before Playwright's failure snapshot, so the password never ends up in
   `trace.zip` / `error-context.md`.
-* `CFAUTH-002` answers Cloudflare's authorize endpoint locally (via
-  `page.route`) with the redirect it sends on success, covering the app's
-  side of the flow regardless of the bot protection.
+* `CFAUTH-002` answers Cloudflare's authorize and token endpoints locally
+  (via `page.route`) as they answer on success, covering the app's side of
+  the Authorization Code + PKCE flow (`callback/` redeeming the code)
+  regardless of the bot protection.
 
 ## Exploring a signed-in session with `playwright-cli`
 
