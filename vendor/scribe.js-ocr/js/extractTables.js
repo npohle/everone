@@ -1,0 +1,406 @@
+import ocr from './objects/ocrObjects.js';
+import {
+  LayoutDataColumn, LayoutDataTable, LayoutDataTablePage, layoutBoxIncludes, calcTableBbox,
+} from './objects/layoutObjects.js';
+
+/**
+ *
+ * @param {OcrPage} pageObj
+ * @param {import('./objects/layoutObjects.js').LayoutDataTablePage} layoutObj
+ * @returns
+ */
+export function extractTableContent(pageObj, layoutObj) {
+  /** @type {Object<string, ReturnType<extractSingleTableContent>>} */
+  const tableWordObj = {};
+
+  if (!layoutObj?.tables || Object.keys(layoutObj.tables).length === 0) return tableWordObj;
+
+  for (const [key, value] of Object.entries(layoutObj.tables)) {
+    tableWordObj[key] = extractSingleTableContent(pageObj, Object.values(value.boxes), value.rowBounds);
+  }
+
+  return tableWordObj;
+}
+
+// TODO: This currently creates junk rows with only punctuation, as those bounding boxes are so small they often do not overlap with other lines.
+/**
+ * Extracts words from a page that are within the bounding boxes of the table, organized into arrays of rows and columns.
+ * The output is in the form of a 3D array, where the first dimension is the row, the second dimension is the column, and the third dimension is the word.
+ * @param {OcrPage} pageObj
+ * @param {Array<import('./objects/layoutObjects.js').LayoutBoxBase>} boxes
+ * @param {?Array<number>} [rowBounds=null] - Bottom y-coordinate of each row. When provided, used for row assignment instead of spatial derivation.
+ */
+export function extractSingleTableContent(pageObj, boxes, rowBounds = null) {
+  /** @type {Array<OcrWord>} */
+  const wordArr = [];
+  /** @type {Array<bbox>} */
+  const boxArr = [];
+  /** @type {Array<number>} */
+  const wordPriorityArr = [];
+
+  // Sort boxes by left bound.
+  const boxesArr = Object.values(boxes).sort((a, b) => a.coords.left - b.coords.left);
+
+  const tableBox = {
+    left: boxesArr[0].coords.left,
+    top: boxesArr[0].coords.top,
+    right: boxesArr[boxesArr.length - 1].coords.right,
+    bottom: boxesArr[boxesArr.length - 1].coords.bottom,
+  };
+
+  // Unlike when exporting to text, anything not in a rectangle is excluded by default
+  // priorityArr.fill(boxesArr.length+1);
+
+  for (let i = 0; i < pageObj.lines.length; i++) {
+    const lineObj = ocr.cloneLine(pageObj.lines[i]);
+    ocr.rotateLine(lineObj, pageObj.angle * -1, pageObj.dims);
+
+    // Skip lines that are entirely outside the table
+    if (lineObj.bbox.left > tableBox.right || lineObj.bbox.right < tableBox.left || lineObj.bbox.top > tableBox.bottom || lineObj.bbox.bottom < tableBox.top) continue;
+
+    // First, check for overlap with line-level boxes.
+    let boxFoundLine = false;
+    // It is possible for a single line to match the inclusion criteria for multiple boxes.
+    // Only the first (leftmost) match is used.
+    for (let j = 0; j < boxesArr.length; j++) {
+      const obj = boxesArr[j];
+
+      if (obj.inclusionLevel !== 'line') continue;
+
+      if (layoutBoxIncludes(lineObj.bbox, obj)) {
+        for (let k = 0; k < lineObj.words.length; k++) {
+          const wordObj = lineObj.words[k];
+          wordArr.push(wordObj);
+          boxArr.push(lineObj.bbox);
+          wordPriorityArr.push(j);
+        }
+        boxFoundLine = true;
+        break;
+      }
+    }
+
+    if (boxFoundLine) continue;
+
+    // Second, check for overlap on the word-level boxes.
+    for (const wordObj of lineObj.words) {
+      let boxFoundWord = false;
+      for (let j = 0; j < boxesArr.length; j++) {
+        const obj = boxesArr[j];
+
+        if (obj.inclusionLevel !== 'word') continue;
+
+        if (layoutBoxIncludes(wordObj.bbox, obj)) {
+          wordArr.push(wordObj);
+          boxArr.push(wordObj.bbox);
+          wordPriorityArr.push(j);
+          boxFoundWord = true;
+          break;
+        }
+      }
+
+      if (boxFoundWord) continue;
+
+      // It is possible for a word that is 100% within the table to not be included in any columns if the user sets particular inclusion rules.
+      // To prevent this, any word that is unassigned with the user-specified inclusion rules is assigned using the word-level+majority rule.
+      for (let j = 0; j < boxesArr.length; j++) {
+        const obj = boxesArr[j];
+
+        if (layoutBoxIncludes(wordObj.bbox, obj, 'majority')) {
+          wordArr.push(wordObj);
+          boxArr.push(wordObj.bbox);
+          wordPriorityArr.push(j);
+          break;
+        }
+      }
+    }
+  }
+
+  // Split lines into separate arrays for each column
+  // let lastCol = -1;
+  /** @type {Array<Array<{word: OcrWord, box: bbox}>>} */
+  const colArr = [];
+  for (let i = 0; i < boxesArr.length; i++) {
+    colArr.push([]);
+    for (let j = 0; j < wordPriorityArr.length; j++) {
+      if (wordPriorityArr[j] === i) {
+        colArr[colArr.length - 1].push({ word: wordArr[j], box: boxArr[j] });
+      }
+    }
+  }
+
+  // For each array, sort all words by lower bound.
+  // The following steps assume that the words are ordered.
+  colArr.forEach((x) => x.sort((a, b) => a.box.bottom - b.box.bottom));
+
+  // Create rows
+  /** @type {Array<Array<Array<OcrWord>>>} */
+  const rowWordArr = [];
+
+  /** @type {Array<number>} */
+  const rowBottomArr = [];
+
+  if (rowBounds) {
+    for (let r = 0; r < rowBounds.length; r++) {
+      /** @type {Array<Array<OcrWord>>} */
+      const colWordArr = [];
+      for (let i = 0; i < colArr.length; i++) {
+        colWordArr[i] = [];
+      }
+      // Words are assigned by their vertical center, which holds for both conventions `rowBounds` can carry: true row edges from drawn rules or bands, and text bottoms from vendor imports.
+      // Testing a word's bottom against the bound instead breaks on true edges, pushing a top-aligned word in a tall row up into the row above.
+      const rowTop = r === 0 ? -Infinity : rowBounds[r - 1];
+      const rowBot = r + 1 < rowBounds.length ? rowBounds[r] : Infinity;
+      for (let i = 0; i < colArr.length; i++) {
+        for (const entry of colArr[i]) {
+          const yC = (entry.box.top + entry.box.bottom) / 2;
+          if (yC > rowTop && yC <= rowBot) {
+            colWordArr[i].push(entry.word);
+          }
+        }
+      }
+      rowWordArr.push(colWordArr);
+      rowBottomArr.push(rowBounds[r]);
+    }
+  } else {
+    // Derive rows spatially.
+    const indexArr = Array(colArr.length);
+    indexArr.fill(0);
+    const lengthArr = colArr.map((x) => x.length);
+
+    // To split lines into cells, the highest line on the page (that has not already been assigned to a cell) is identified,
+    // and establishes the vertical bounds of a new row.
+    // Next, the first unassigned line in each column is checked for whether it belongs in the new row.
+    // This is necessary as a "line" in HOCR does not necessarily correspond to a visual line--
+    // multiple HOCR "lines" may have the same visual baseline so belong in the same cell.
+    while (!indexArr.every((x, index) => x === lengthArr[index])) {
+      // The opening word skips the center test, which a zero-height box fails, so every pass advances.
+      let openCol = -1;
+      for (let i = 0; i < colArr.length; i++) {
+        if (indexArr[i] < lengthArr[i] && (openCol < 0 || colArr[i][indexArr[i]].box.bottom < colArr[openCol][indexArr[openCol]].box.bottom)) openCol = i;
+      }
+      const openBottom = colArr[openCol][indexArr[openCol]].box.bottom;
+
+      /** @type {Array<Array<OcrWord>>} */
+      const colWordArr = colArr.map(() => []);
+      colWordArr[openCol].push(colArr[openCol][indexArr[openCol]].word);
+      indexArr[openCol]++;
+      let rowBottom = openBottom;
+
+      for (let i = 0; i < indexArr.length; i++) {
+        for (let j = indexArr[i]; j < colArr[i].length; j++) {
+          const { box } = colArr[i][j];
+          if ((box.top + box.bottom) / 2 >= openBottom) break;
+          colWordArr[i].push(colArr[i][j].word);
+          if (box.bottom > rowBottom) rowBottom = box.bottom;
+          indexArr[i]++;
+        }
+      }
+      rowWordArr.push(colWordArr);
+      rowBottomArr.push(rowBottom);
+    }
+  }
+
+  return { rowWordArr, rowBottomArr };
+}
+
+/**
+ * Convert pre-structured cell text into spatial layout data by matching
+ * each cell's text against OCR words on the page.
+ *
+ * @param {Array<Array<string>>} rows - 2D array of cell text [row][column].
+ * @param {OcrPage} ocrPage
+ * @param {LayoutDataTable} table - The table to populate with boxes and rowBounds.
+ */
+function convertRowsToLayout(rows, ocrPage, table) {
+  if (!rows || rows.length === 0 || !ocrPage) return;
+
+  const numCols = Math.max(...rows.map((r) => r.length));
+
+  const colLeft = Array(numCols).fill(Infinity);
+  const colRight = Array(numCols).fill(-Infinity);
+  const rowBottom = Array(rows.length).fill(-Infinity);
+  let tableTop = Infinity;
+
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = 0; c < rows[r].length; c++) {
+      const cellText = rows[r][c];
+      if (!cellText) continue;
+
+      const matchedWords = ocr.getMatchingWords(cellText, ocrPage);
+      for (const word of matchedWords) {
+        if (word.bbox.left < colLeft[c]) colLeft[c] = word.bbox.left;
+        if (word.bbox.right > colRight[c]) colRight[c] = word.bbox.right;
+        if (word.bbox.bottom > rowBottom[r]) rowBottom[r] = word.bbox.bottom;
+        if (word.bbox.top < tableTop) tableTop = word.bbox.top;
+      }
+    }
+  }
+
+  const tableBottom = Math.max(...rowBottom.filter((v) => v > -Infinity));
+  if (tableTop === Infinity) tableTop = 0;
+
+  // Fill gaps: expand column bounds so there's no empty space between columns.
+  for (let c = 0; c < numCols - 1; c++) {
+    if (colRight[c] < Infinity && colLeft[c + 1] < Infinity) {
+      const mid = Math.round((colRight[c] + colLeft[c + 1]) / 2);
+      colRight[c] = mid;
+      colLeft[c + 1] = mid;
+    }
+  }
+
+  for (let c = 0; c < numCols; c++) {
+    if (colLeft[c] === Infinity) continue;
+    table.boxes.push(new LayoutDataColumn({
+      left: Math.round(colLeft[c]),
+      top: Math.round(tableTop),
+      right: Math.round(colRight[c]),
+      bottom: Math.round(tableBottom),
+    }, table));
+  }
+
+  table.rowBounds = rowBottom.map((v) => (v > -Infinity ? Math.round(v) : 0));
+}
+
+/**
+ * Create table layout from cell text by matching against OCR words on the page.
+ *
+ * @param {number} pageNum - Page index (0-based).
+ * @param {Array<{rows: Array<Array<string>>}>} tables
+ * @param {OcrPage} ocrPage
+ */
+export function createTablesFromText(pageNum, tables, ocrPage) {
+  const tablesPage = new LayoutDataTablePage(pageNum);
+  for (const spec of tables) {
+    const table = new LayoutDataTable(tablesPage);
+    convertRowsToLayout(spec.rows, ocrPage, table);
+    tablesPage.tables.push(table);
+  }
+  return tablesPage;
+}
+
+/**
+ * A table cell carrying per-run formatting alongside its plain text.
+ * The runs concatenate exactly to `text`, with each inter-word space appended to the preceding run.
+ * @typedef {{text: string, runs: Array<{text: string, style: Style}>}} TableCellRich
+ */
+
+/**
+ * Extract text content from tables on a page as rows of cell strings.
+ *
+ * @param {OcrPage} ocrPage
+ * @param {import('./objects/layoutObjects.js').LayoutDataTablePage} layoutPage
+ * @param {Object} [opts]
+ * @param {boolean} [opts.cellFormats=false] - Return rich `TableCellRich` cells carrying word formatting instead of plain strings.
+ */
+export function extractTextFromTables(ocrPage, layoutPage, opts = {}) {
+  if (!layoutPage?.tables?.length) return [];
+  if (!ocrPage) return [];
+
+  return layoutPage.tables.map((table) => {
+    const result = extractSingleTableContent(ocrPage, Object.values(table.boxes), table.rowBounds);
+    const rows = result.rowWordArr.map((row) => row.map((col) => {
+      if (!col || col.length === 0) return opts.cellFormats ? { text: '', runs: [] } : '';
+      col.sort((a, b) => a.bbox.left - b.bbox.left);
+      const text = col.map((w) => w.text).join(' ');
+      if (!opts.cellFormats) return text;
+      /** @type {Array<{text: string, style: Style}>} */
+      const runs = [];
+      for (let wi = 0; wi < col.length; wi++) {
+        const word = col[wi];
+        const segments = ocr.getWordStyleSegments(word) || [{ start: 0, end: word.text.length, style: word.style }];
+        for (let si = 0; si < segments.length; si++) {
+          const seg = segments[si];
+          const segText = word.text.slice(seg.start, seg.end);
+          const sep = wi > 0 && si === 0 ? ' ' : '';
+          const prev = runs[runs.length - 1];
+          // smallCaps is left out of this list because no export consumes it, and words often carry a style run that differs on it alone.
+          const same = prev
+            && prev.style.bold === seg.style.bold && prev.style.italic === seg.style.italic
+            && prev.style.underline === seg.style.underline && prev.style.sup === seg.style.sup
+            && prev.style.font === seg.style.font && prev.style.size === seg.style.size
+            && prev.style.color === seg.style.color;
+          if (same) {
+            prev.text += sep + segText;
+          } else {
+            if (prev && sep) prev.text += sep;
+            runs.push({ text: segText, style: seg.style });
+          }
+        }
+      }
+      return { text, runs };
+    }));
+    return { id: table.id, rows };
+  });
+}
+
+/**
+ * Group the document's tables into chains of `continuesPrev` fragments, in document order.
+ * An unchained table is a chain of one.
+ * @param {Array<import('./objects/layoutObjects.js').LayoutDataTablePage>} layoutPageArr
+ * @returns {Array<Array<{table: LayoutDataTable, n: number}>>}
+ */
+export function tableChains(layoutPageArr) {
+  /** @type {Array<{table: LayoutDataTable, n: number}>} */
+  const ordered = [];
+  for (const page of layoutPageArr) {
+    if (!page?.tables?.length) continue;
+    const entries = page.tables.map((table) => ({ table, n: page.n }));
+    entries.sort((a, b) => calcTableBbox(a.table).top - calcTableBbox(b.table).top);
+    ordered.push(...entries);
+  }
+  /** @type {Array<Array<{table: LayoutDataTable, n: number}>>} */
+  const chains = [];
+  for (const entry of ordered) {
+    if (entry.table.continuesPrev && chains.length > 0) chains[chains.length - 1].push(entry);
+    else chains.push([entry]);
+  }
+  return chains;
+}
+
+/**
+ * Display name for a chain, used as its export sheet name.
+ * The head fragment's own title when present, else "Page N Table M" or "Pages A-B Table M", numbering the head by its position down its page.
+ * @param {Array<import('./objects/layoutObjects.js').LayoutDataTablePage>} layoutPageArr
+ * @param {Array<{table: LayoutDataTable, n: number}>} chain
+ */
+export function tableChainName(layoutPageArr, chain) {
+  const head = chain[0];
+  if (head.table.title?.text) return head.table.title.text;
+  const pageTables = layoutPageArr[head.n].tables.slice().sort((a, b) => calcTableBbox(a).top - calcTableBbox(b).top);
+  const m = pageTables.indexOf(head.table) + 1;
+  const last = chain[chain.length - 1].n;
+  return chain.length > 1 ? `Pages ${head.n + 1}–${last + 1} Table ${m}` : `Page ${head.n + 1} Table ${m}`;
+}
+
+/**
+ * Extract every logical table of the document, each `continuesPrev` chain stitched into one row list.
+ * A continuation fragment's first row is dropped when its text exactly matches the chain head's first row.
+ * `headerRows` is the head table's detected header-row count (`null` falls back to 1), clamped to the head fragment's rows.
+ * @param {Array<OcrPage>} ocrPageArr
+ * @param {Array<import('./objects/layoutObjects.js').LayoutDataTablePage>} layoutPageArr
+ * @param {Object} [opts] - Passed through to `extractTextFromTables` (e.g. `cellFormats`).
+ * @returns {Array<{fragments: Array<{table: LayoutDataTable, n: number, rows: Array<Array<string|TableCellRich>>, headerDeduped: boolean}>,
+ *   rows: Array<Array<string|TableCellRich>>, headerRows: number}>}
+ */
+export function extractDocTableChains(ocrPageArr, layoutPageArr, opts = {}) {
+  const norm = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  const rowText = (row) => row.map((c) => (typeof c === 'string' ? c : c.text)).join(' ');
+  return tableChains(layoutPageArr).map((chain) => {
+    /** @type {?string} */
+    let headerRow = null;
+    const fragments = chain.map(({ table, n }, fi) => {
+      let rows = extractTextFromTables(ocrPageArr[n], /** @type {any} */ ({ tables: [table] }), opts)[0]?.rows || [];
+      if (fi === 0) headerRow = rows.length ? norm(rowText(rows[0])) : null;
+      let headerDeduped = false;
+      if (fi > 0 && headerRow && headerRow.length >= 6 && rows.length && norm(rowText(rows[0])) === headerRow) {
+        rows = rows.slice(1);
+        headerDeduped = true;
+      }
+      return {
+        table, n, rows, headerDeduped,
+      };
+    });
+    const headerRows = Math.max(0, Math.min(chain[0].table.headerRows ?? 1, fragments[0].rows.length));
+    return { fragments, rows: fragments.flatMap((f) => f.rows), headerRows };
+  });
+}

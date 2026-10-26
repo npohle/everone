@@ -1,4 +1,5 @@
 import * as graph from "./graph.js";
+import { extractPdfText } from "./scribe-text.js";
 
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "avif"]);
 const VIDEO_EXT = new Set(["mp4", "webm", "ogv", "mov", "m4v"]);
@@ -42,7 +43,46 @@ const els = {
   title: document.getElementById("viewer-title"),
   download: document.getElementById("viewer-download"),
   open: document.getElementById("viewer-open"),
+  scribe: document.getElementById("viewer-scribe"),
+  scribeDialog: document.getElementById("scribe-dialog"),
+  scribeSource: document.getElementById("scribe-source"),
+  scribeStatus: document.getElementById("scribe-status"),
+  scribeText: document.getElementById("scribe-text"),
 };
+
+// Item currently shown in the preview pane, for the Scribe button.
+let currentItem = null;
+// Monotonic id; a slow extraction must not overwrite the result of a newer one.
+let scribeId = 0;
+
+// Scribe: extract the PDF's text with scribe.js and show it in a modal.
+// Development aid only — this will move into an upload processing pipeline.
+async function runScribe() {
+  const item = currentItem;
+  if (!item) return;
+  const id = ++scribeId;
+  els.scribeSource.textContent = item.name;
+  els.scribeStatus.textContent = "Extracting text…";
+  els.scribeText.value = "";
+  els.scribeDialog.showModal();
+  try {
+    const blob = await graph.fetchContent(item);
+    if (id !== scribeId) return;
+    const text = await extractPdfText(blob, item.name);
+    if (id !== scribeId) return;
+    els.scribeText.value = text;
+    els.scribeStatus.textContent = text.trim() ? "" : "No text found in this document.";
+  } catch (err) {
+    if (id !== scribeId) return;
+    console.error("Text extraction failed", err);
+    els.scribeStatus.textContent = `Text extraction failed: ${(err && err.message) || "Unknown error"}`;
+  }
+}
+
+els.scribe.addEventListener("click", runScribe);
+// Closing abandons any extraction still running so it doesn't fill the
+// textarea behind the user's back.
+els.scribeDialog.addEventListener("close", () => { scribeId++; });
 
 let activeBlobUrl = null;
 // Monotonic id; pending renders with stale ids are discarded so a slow load
@@ -386,6 +426,8 @@ export async function open(item) {
   els.download.hidden = !item["@microsoft.graph.downloadUrl"];
   els.open.href = item.webUrl || "#";
   els.open.hidden = !item.webUrl;
+  currentItem = item;
+  els.scribe.hidden = !PDF_EXT.has(extOf(item.name));
 
   const loading = document.createElement("div");
   loading.className = "unsupported";
@@ -431,6 +473,8 @@ export function clear() {
   els.title.textContent = "Preview";
   els.download.hidden = true;
   els.open.hidden = true;
+  currentItem = null;
+  els.scribe.hidden = true;
   const placeholder = document.createElement("div");
   placeholder.className = "placeholder";
   placeholder.textContent = "Select a file from the list to preview it here.";
