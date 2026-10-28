@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - claude/onedrive-file-browser-spa-cZW1R
+    paths-ignore:
+      - 'functions/**'
+      - '.github/workflows/main_app-everone-extract.yml'
   workflow_dispatch:
 
 permissions:
