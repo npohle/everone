@@ -1,0 +1,18 @@
+{
+  "name": "everone-functions",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Azure Functions backing the OneDrive browser SPA (e.g. a proxy to Cloudflare Workers AI, which has no CORS support).",
+  "type": "module",
+  "main": "src/functions/*.js",
+  "scripts": {
+    "start": "func start",
+    "test": "node --test \"tests/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.17.0"
+  }
+}

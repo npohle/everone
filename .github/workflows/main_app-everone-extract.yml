@@ -7,10 +7,13 @@ on:
   push:
     branches:
       - 'main'
+    paths:
+      - 'functions/**'
+      - '.github/workflows/main_app-everone-extract.yml'
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.' # set this to the path to your web app project, defaults to the repository root
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'functions' # the Function App lives in functions/; the SPA at the root deploys separately via pages.yml
   NODE_VERSION: '24.x' # set this to the node version to use (supports 8.x, 10.x, 12.x)
 
 jobs:
@@ -32,13 +35,16 @@ jobs:
         shell: bash
         run: |
           pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
-          npm install
+          npm ci
           npm run build --if-present
           npm run test --if-present
           popd
 
       - name: Zip artifact for deployment
-        run: zip release.zip ./* -r
+        run: |
+          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
+          zip ../release.zip . -r -x 'tests/*' 'local.settings.json'
+          popd
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
@@ -77,5 +83,5 @@ jobs:
         with:
           app-name: 'app-everone-extract'
           slot-name: 'Production'
-          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+          package: .
           
