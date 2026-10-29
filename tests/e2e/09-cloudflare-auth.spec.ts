@@ -109,6 +109,13 @@ test("CFAUTH-001: user signs in to Cloudflare via the UI, alongside OneDrive", a
 // request with PKCE, callback page, state check, code exchange, token
 // storage, header) independently of Cloudflare's bot protection on its login
 // page.
+//
+// With TEST_CF_APITOKEN set, the token endpoint hands out that real API token
+// and the accounts list comes for real from the extract.rubisco.io proxy;
+// without it, the proxy is answered locally too, with two made-up accounts.
+const realToken = process.env.TEST_CF_APITOKEN;
+const cfToken = realToken || "e2e-cloudflare-token";
+
 test("CFAUTH-002: Cloudflare token obtained via the code flow is held alongside the OneDrive one", async ({ page }) => {
   const artefactsDir = process.env.ARTEFACTS_DIR;
   const { cloudflare } = groups(page);
@@ -132,35 +139,48 @@ test("CFAUTH-002: Cloudflare token obtained via the code flow is held alongside 
       status: 200,
       headers: cors,
       contentType: "application/json",
-      body: JSON.stringify({ access_token: "e2e-cloudflare-token", token_type: "bearer", expires_in: 3600, scope: "ai.read user-details.read account-settings.read memberships.read account-custom-asset.read" }),
+      body: JSON.stringify({ access_token: cfToken, token_type: "bearer", expires_in: 3600, scope: "ai.read user-details.read account-settings.read memberships.read account-custom-asset.read" }),
     });
   });
 
   // Accounts list (https://developers.cloudflare.com/api/resources/accounts/methods/list/),
-  // with more than one account: the header shows the first.
-  const accountsAuth: string[] = [];
-  await page.route("https://api.cloudflare.com/client/v4/accounts**", async (route) => {
-    const cors = {
-      "access-control-allow-origin": "https://rubisco.io",
-      "access-control-allow-headers": "authorization, accept",
-    };
-    if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
-    accountsAuth.push(route.request().headers()["authorization"]);
-    await route.fulfill({
-      status: 200,
-      headers: cors,
-      contentType: "application/json",
-      body: JSON.stringify({
-        success: true,
-        errors: [],
-        messages: [],
-        result: [
-          { id: "023e105f4ecef8ad9ca31a8372d0c353", name: "E2E Primary Account", type: "standard" },
-          { id: "9a7806061c88ada191ed06f989cc3dac", name: "E2E Second Account", type: "standard" },
-        ],
-      }),
-    });
+  // fetched through the extract.rubisco.io proxy, which is POSTed the token.
+  const accountsUrl = "https://extract.rubisco.io/cloudflare/accounts";
+  const accountsRequests: unknown[] = [];
+  page.on("request", (request) => {
+    if (request.url() === accountsUrl && request.method() === "POST") {
+      accountsRequests.push(request.postDataJSON());
+    }
   });
+  if (!realToken) {
+    // More than one account: the header shows the first.
+    await page.route(accountsUrl, async (route) => {
+      const cors = {
+        "access-control-allow-origin": "https://rubisco.io",
+        "access-control-allow-headers": "content-type",
+        "access-control-allow-methods": "POST",
+      };
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+      await route.fulfill({
+        status: 200,
+        headers: cors,
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: 200,
+          contentType: "application/json",
+          result: {
+            success: true,
+            errors: [],
+            messages: [],
+            result: [
+              { id: "023e105f4ecef8ad9ca31a8372d0c353", name: "E2E Primary Account", type: "standard" },
+              { id: "9a7806061c88ada191ed06f989cc3dac", name: "E2E Second Account", type: "standard" },
+            ],
+          },
+        }),
+      });
+    });
+  }
 
   await cloudflare.getByRole("button", { name: "Sign in to Cloudflare" }).click();
   await page.waitForURL("https://rubisco.io/");
@@ -184,11 +204,17 @@ test("CFAUTH-002: Cloudflare token obtained via the code flow is held alongside 
   await expectBothSignedIn(page);
 
   // The header shows the first account's name and ID, fetched with the token.
-  const account = cloudflare.getByText("E2E Primary Account", { exact: true });
+  const account = cloudflare.getByTitle(/^.+ \([0-9a-f]{32}\)$/);
   await expect(account).toBeVisible();
-  await expect(cloudflare.getByText("023e105f4ecef8ad9ca31a8372d0c353", { exact: true })).toBeVisible();
-  await expect(cloudflare.getByText("E2E Second Account")).toHaveCount(0);
-  expect(accountsAuth[0]).toBe("Bearer e2e-cloudflare-token");
+  if (!realToken) {
+    await expect(account).toHaveAttribute("title", "E2E Primary Account (023e105f4ecef8ad9ca31a8372d0c353)");
+    await expect(cloudflare.getByText("E2E Primary Account", { exact: true })).toBeVisible();
+    await expect(cloudflare.getByText("023e105f4ecef8ad9ca31a8372d0c353", { exact: true })).toBeVisible();
+    await expect(cloudflare.getByText("E2E Second Account")).toHaveCount(0);
+  }
+  // Compared without printing the token in a failure message.
+  expect(accountsRequests.length).toBeGreaterThan(0);
+  expect((accountsRequests[0] as { apiToken?: string }).apiToken === cfToken).toBe(true);
   await page.screenshot({ path: `${artefactsDir}/09-11-both-signed-in.png` });
 
   // Two independent tokens: MSAL's cache and the Cloudflare token side by side.

@@ -26,6 +26,7 @@ TEST_PASSWORD=...
 TEST_TOTP_SEED=...   # base32 secret shared with the authenticator app
 TEST_CF_USERNAME=... # Cloudflare account for 09-cloudflare-auth.spec.ts
 TEST_CF_PASSWORD=...
+TEST_CF_APITOKEN=... # optional: real API token for CFAUTH-002's accounts list
 ```
 
 ## Running the suite
@@ -127,9 +128,12 @@ from the Microsoft one and not part of the saved storage state:
 * `CFAUTH-002` answers Cloudflare's authorize and token endpoints locally
   (via `page.route`) as they answer on success, covering the app's side of
   the Authorization Code + PKCE flow (`callback/` redeeming the code)
-  regardless of the bot protection. It also answers the Cloudflare API's
-  accounts list (two accounts) and checks the header shows the first one's
-  name and ID.
+  regardless of the bot protection. The app fetches the accounts list
+  through the `https://extract.rubisco.io/cloudflare/accounts` proxy (POSTing
+  the token as `apiToken`). With `TEST_CF_APITOKEN` set, the token endpoint
+  hands out that real API token and the proxy is called for real; otherwise
+  the proxy is answered locally (two accounts). Either way the test checks
+  the header shows the first account's name and ID.
 
 ## Exploring a signed-in session with `playwright-cli`
 
