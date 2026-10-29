@@ -65,7 +65,12 @@ export async function runCloudflareAi({ accountId, apiToken, model, body }, fetc
     },
     body: JSON.stringify(body),
   });
+  return wrapCloudflareResponse(response);
+}
 
+// Wraps a Cloudflare API response as { status, contentType, result } (plus
+// encoding: "base64" for binary results).
+export async function wrapCloudflareResponse(response) {
   const contentType = (response.headers.get("content-type") ?? "").split(";")[0].trim();
   const wrapped = { status: response.status, contentType };
   if (isJson(contentType)) {
