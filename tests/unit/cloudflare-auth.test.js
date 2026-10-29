@@ -41,7 +41,7 @@ const signedInState = () => memoryStorage({ [STATE_KEY]: "s", [VERIFIER_KEY]: "v
 
 test("config has a Cloudflare client separate from the Microsoft one", () => {
   assert.equal(config.cloudflare.clientId, "0b70dc1b060717a33f39ea09743b85df");
-  assert.deepEqual(config.cloudflare.scopes, ["ai.read", "user-details.read"]);
+  assert.deepEqual(config.cloudflare.scopes, ["ai.read", "user-details.read", "account-settings.read", "memberships.read", "account-custom-asset.read"]);
   assert.equal(config.cloudflare.redirectUri, "https://rubisco.io/callback");
   assert.notEqual(config.cloudflare.clientId, config.clientId);
 });
@@ -51,7 +51,7 @@ test("buildAuthorizeUrl requests an authorization code with PKCE and the configu
   assert.equal(url.origin + url.pathname, config.cloudflare.authorizeUrl);
   assert.equal(url.searchParams.get("response_type"), "code");
   assert.equal(url.searchParams.get("client_id"), "0b70dc1b060717a33f39ea09743b85df");
-  assert.equal(url.searchParams.get("scope"), "ai.read user-details.read");
+  assert.equal(url.searchParams.get("scope"), "ai.read user-details.read account-settings.read memberships.read account-custom-asset.read");
   assert.equal(url.searchParams.get("redirect_uri"), config.cloudflare.redirectUri);
   assert.equal(url.searchParams.get("state"), "abc123");
   assert.equal(url.searchParams.get("code_challenge"), "challenge");
