@@ -146,32 +146,50 @@ test("readToken drops expired and malformed tokens", () => {
   assert.equal(readToken(memoryStorage()), null);
 });
 
-test("fetchFirstAccount lists the user's accounts with the OAuth token and returns the first", async () => {
-  const fetchImpl = fakeFetch(200, {
+// The extract.rubisco.io proxy's answer: Cloudflare's own response, wrapped.
+const proxied = (status, result) => ({ status, contentType: "application/json", result });
+
+test("config points at the extract.rubisco.io accounts proxy", () => {
+  assert.equal(config.cloudflare.accountsUrl, "https://extract.rubisco.io/cloudflare/accounts");
+});
+
+test("fetchFirstAccount POSTs the OAuth token to the accounts proxy and returns the first account", async () => {
+  const fetchImpl = fakeFetch(200, proxied(200, {
     success: true,
     result: [
       { id: "023e105f4ecef8ad9ca31a8372d0c353", name: "Primary Account" },
       { id: "1111", name: "Second Account" },
     ],
-  });
+  }));
   const account = await fetchFirstAccount("t", config.cloudflare, fetchImpl);
   assert.deepEqual(account, { id: "023e105f4ecef8ad9ca31a8372d0c353", name: "Primary Account" });
 
   assert.equal(fetchImpl.calls.length, 1);
   const { url, init } = fetchImpl.calls[0];
-  assert.equal(new URL(url).origin + new URL(url).pathname, `${config.cloudflare.apiBase}/accounts`);
-  assert.equal(init.headers.Authorization, "Bearer t");
+  assert.equal(url, config.cloudflare.accountsUrl);
+  assert.equal(init.method, "POST");
+  assert.equal(init.headers["Content-Type"], "application/json");
+  assert.equal(init.headers.Authorization, undefined);
+  assert.deepEqual(JSON.parse(init.body), { apiToken: "t" });
 });
 
 test("fetchFirstAccount returns null when the user has no accounts", async () => {
-  assert.equal(await fetchFirstAccount("t", config.cloudflare, fakeFetch(200, { success: true, result: [] })), null);
+  assert.equal(await fetchFirstAccount("t", config.cloudflare, fakeFetch(200, proxied(200, { success: true, result: [] }))), null);
 });
 
-test("fetchFirstAccount throws Cloudflare's error on a failed request", async () => {
+test("fetchFirstAccount throws Cloudflare's or the proxy's error on a failed request", async () => {
   await assert.rejects(
     fetchFirstAccount("t", config.cloudflare,
-      fakeFetch(403, { success: false, errors: [{ code: 10000, message: "Authentication error" }] })),
+      fakeFetch(403, proxied(403, { success: false, errors: [{ code: 10000, message: "Authentication error" }] }))),
     /Authentication error/,
+  );
+  await assert.rejects(
+    fetchFirstAccount("t", config.cloudflare, fakeFetch(400, { error: '"apiToken" must be a non-empty string.' })),
+    /"apiToken" must be a non-empty string/,
+  );
+  await assert.rejects(
+    fetchFirstAccount("t", config.cloudflare, fakeFetch(502, { error: "Could not reach the Cloudflare API." })),
+    /Could not reach the Cloudflare API/,
   );
   await assert.rejects(fetchFirstAccount("t", config.cloudflare, fakeFetch(500, {})), /HTTP 500/);
 });

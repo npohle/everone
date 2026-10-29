@@ -33,8 +33,10 @@ export const config = {
     clientId: "0b70dc1b060717a33f39ea09743b85df",
     authorizeUrl: "https://dash.cloudflare.com/oauth2/auth",
     tokenUrl: "https://dash.cloudflare.com/oauth2/token",
-    // Cloudflare API v4, called with the OAuth access token (accounts list).
-    apiBase: "https://api.cloudflare.com/client/v4",
+    // Cloudflare's API sends no CORS headers, so its accounts list is fetched
+    // through this proxy (functions/src/cloudflare-accounts.js), which is
+    // POSTed the OAuth access token as { apiToken }.
+    accountsUrl: "https://extract.rubisco.io/cloudflare/accounts",
     scopes: ["ai.read", "user-details.read", "account-settings.read", "memberships.read", "account-custom-asset.read"],
     redirectUri: "https://rubisco.io/callback",
     appUrl: "https://rubisco.io/",

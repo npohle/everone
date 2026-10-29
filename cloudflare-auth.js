@@ -174,16 +174,23 @@ export function signOut() {
 // The first of the Cloudflare accounts the signed-in user has access to
 // (https://developers.cloudflare.com/api/resources/accounts/methods/list/),
 // as { id, name }, or null when there are none. Throws on a failed request.
+//
+// Cloudflare's API isn't reachable cross-origin, so this goes through the
+// extract.rubisco.io proxy, which answers { status, contentType, result } with
+// Cloudflare's response as `result` (or { error } when it rejects the request).
 export async function fetchFirstAccount(accessToken, cf = config.cloudflare, fetchImpl = globalThis.fetch) {
-  const res = await fetchImpl(`${cf.apiBase}/accounts`, {
-    headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+  const res = await fetchImpl(cf.accountsUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ apiToken: accessToken }),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok || body.success === false) {
-    const reason = (body.errors || []).map((e) => e.message).filter(Boolean).join("; ");
+  const accounts = body.result && typeof body.result === "object" ? body.result : {};
+  if (!res.ok || accounts.success === false) {
+    const reason = (accounts.errors || []).map((e) => e.message).filter(Boolean).join("; ") || body.error;
     throw new Error(reason || `accounts request failed (HTTP ${res.status})`);
   }
-  const first = (body.result || [])[0];
+  const first = (accounts.result || [])[0];
   return first ? { id: first.id, name: first.name } : null;
 }
 
