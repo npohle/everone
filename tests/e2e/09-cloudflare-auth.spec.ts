@@ -74,7 +74,7 @@ test("CFAUTH-001: user signs in to Cloudflare via the UI, alongside OneDrive", a
     }
     await submit.click();
 
-    // First-time consent for the app's "ai.read" scope is asked on
+    // First-time consent for the app's "ai.read" and "user-details.read" scopes is asked on
     // Cloudflare's side before it redirects back (to callback/, which
     // redeems the code and returns to the app).
     const consent = page.getByRole("button", { name: /^(authorize|allow|accept)$/i });
@@ -132,7 +132,7 @@ test("CFAUTH-002: Cloudflare token obtained via the code flow is held alongside 
       status: 200,
       headers: cors,
       contentType: "application/json",
-      body: JSON.stringify({ access_token: "e2e-cloudflare-token", token_type: "bearer", expires_in: 3600, scope: "ai.read" }),
+      body: JSON.stringify({ access_token: "e2e-cloudflare-token", token_type: "bearer", expires_in: 3600, scope: "ai.read user-details.read" }),
     });
   });
 
@@ -167,7 +167,7 @@ test("CFAUTH-002: Cloudflare token obtained via the code flow is held alongside 
 
   const a = authorize!.searchParams;
   expect(a.get("client_id")).toBe("0b70dc1b060717a33f39ea09743b85df");
-  expect(a.get("scope")).toBe("ai.read");
+  expect(a.get("scope")).toBe("ai.read user-details.read");
   expect(a.get("response_type")).toBe("code");
   expect(a.get("redirect_uri")).toBe("https://rubisco.io/callback");
   expect(a.get("code_challenge_method")).toBe("S256");

@@ -35,7 +35,7 @@ export const config = {
     tokenUrl: "https://dash.cloudflare.com/oauth2/token",
     // Cloudflare API v4, called with the OAuth access token (accounts list).
     apiBase: "https://api.cloudflare.com/client/v4",
-    scopes: ["ai.read"],
+    scopes: ["ai.read", "user-details.read"],
     redirectUri: "https://rubisco.io/callback",
     appUrl: "https://rubisco.io/",
   },
