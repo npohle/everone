@@ -38,6 +38,43 @@ npm run test:e2e
 Run a single spec file the same way Playwright normally supports:
 `npx playwright test 02-search.spec.ts`.
 
+### Chromium on a bare Linux box without root
+
+If the `auth` project fails straight away with `error while loading shared
+libraries: libglib-2.0.so.0` (or similar), Chromium's system libraries are
+missing. `npx playwright install-deps chromium` fixes that if you have root.
+If you don't, you can download the `.deb`s and unpack them into a local
+prefix (Ubuntu 24.04 package names):
+
+```bash
+mkdir -p /tmp/chromedeps/debs && cd /tmp/chromedeps/debs
+apt-get download libglib2.0-0t64 libnspr4 libnss3 libatk1.0-0t64 \
+  libatk-bridge2.0-0t64 libdbus-1-3 libx11-6 libxcomposite1 libxdamage1 \
+  libxext6 libxfixes3 libxrandr2 libgbm1 libxcb1 libxkbcommon0 \
+  libasound2t64 libatspi2.0-0t64 libxau6 libxdmcp6 libxrender1 libdrm2 \
+  libwayland-server0 libffi8 libpcre2-8-0 libexpat1 libxi6 \
+  fontconfig-config fonts-dejavu-core fonts-liberation
+for f in *.deb; do dpkg -x "$f" /tmp/chromedeps/root; done
+export LD_LIBRARY_PATH=/tmp/chromedeps/root/usr/lib/x86_64-linux-gnu
+```
+
+Chromium also crashes (`SIGTRAP`, `SkFontMgr_FontConfigInterface ... Not
+implemented`) as soon as it renders a page if fontconfig can't find a config
+or any fonts. Point it at the unpacked ones:
+
+```bash
+cat > /tmp/chromedeps/fonts.conf <<'EOF'
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <dir>/tmp/chromedeps/root/usr/share/fonts</dir>
+  <cachedir>/tmp/chromedeps/fccache</cachedir>
+  <include ignore_missing="yes">/tmp/chromedeps/root/etc/fonts/conf.d</include>
+</fontconfig>
+EOF
+export FONTCONFIG_FILE=/tmp/chromedeps/fonts.conf
+```
+
 ## How it's wired
 
 **Caddy** (`tests/e2e/lib/caddy.ts`'s `startCaddy`/`stopCaddy`, called from
