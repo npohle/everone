@@ -3,7 +3,7 @@ import * as auth from "./auth.js";
 import * as cfAuth from "./cloudflare-auth.js";
 import * as graph from "./graph.js";
 import * as viewer from "./viewer.js";
-import { mergeFiles } from "./upload-list.js";
+import { mergeFiles, uploadNamesValid } from "./upload-list.js";
 
 const els = {
   signedOut: document.getElementById("signed-out"),
@@ -64,9 +64,10 @@ const state = {
   selectedId: null,
   // True while a folder listing or search request is in flight.
   loading: false,
-  // Upload dialog: target folder, picked files, and per-file result keyed by
-  // name. phase is "select" (editable), "uploading" (read-only) or "done".
-  upload: { folder: null, files: [], results: new Map(), phase: "select" },
+  // Upload dialog: target folder, picked files, the name each file is
+  // uploaded as and its result (both keyed by File). phase is "select"
+  // (editable), "uploading" (read-only) or "done".
+  upload: { folder: null, files: [], names: new Map(), results: new Map(), phase: "select" },
 };
 
 function showToast(msg, ms = 4000) {
@@ -302,6 +303,7 @@ function openUploadDialog() {
   state.upload = {
     folder: state.stack[state.stack.length - 1] || null,
     files: [],
+    names: new Map(),
     results: new Map(),
     phase: "select",
   };
@@ -317,6 +319,10 @@ const UPLOAD_STATUS = {
   failed: { cls: "failed", label: "Upload failed", text: "✗" },
 };
 
+function uploadName(file) {
+  return state.upload.names.get(file) ?? file.name;
+}
+
 function renderUploadDialog() {
   const { files, results, phase } = state.upload;
   els.uploadList.replaceChildren();
@@ -325,7 +331,22 @@ function renderUploadDialog() {
     const name = document.createElement("span");
     name.className = "upload-name";
     name.textContent = file.name;
+    name.title = file.name;
     li.appendChild(name);
+
+    // Updated in place rather than re-rendered, so typing keeps focus.
+    const rename = document.createElement("input");
+    rename.type = "text";
+    rename.className = "upload-rename";
+    rename.value = uploadName(file);
+    rename.disabled = phase !== "select";
+    rename.spellcheck = false;
+    rename.setAttribute("aria-label", `Upload ${file.name} as`);
+    rename.addEventListener("input", () => {
+      state.upload.names.set(file, rename.value);
+      updateUploadStart();
+    });
+    li.appendChild(rename);
 
     if (phase === "select") {
       const remove = document.createElement("button");
@@ -336,11 +357,12 @@ function renderUploadDialog() {
       remove.title = "Remove";
       remove.addEventListener("click", () => {
         state.upload.files = state.upload.files.filter((f) => f !== file);
+        state.upload.names.delete(file);
         renderUploadDialog();
       });
       li.appendChild(remove);
     } else {
-      const result = results.get(file.name) || { status: "uploading" };
+      const result = results.get(file) || { status: "uploading" };
       const s = UPLOAD_STATUS[result.status];
       const icon = document.createElement("span");
       icon.className = `upload-status ${s.cls}`;
@@ -356,9 +378,14 @@ function renderUploadDialog() {
   const editable = phase === "select";
   els.uploadSelect.disabled = !editable;
   els.uploadCancel.disabled = !editable;
-  els.uploadStart.disabled = !editable || files.length === 0;
+  updateUploadStart();
   els.uploadStart.hidden = phase === "done";
   els.uploadClose.hidden = phase !== "done";
+}
+
+function updateUploadStart() {
+  const { files, phase } = state.upload;
+  els.uploadStart.disabled = phase !== "select" || !uploadNamesValid(files.map(uploadName));
 }
 
 function addUploadFiles(fileList) {
@@ -375,19 +402,19 @@ const UPLOAD_CONCURRENCY = 3;
 
 async function startUpload() {
   const upload = state.upload;
-  if (upload.phase !== "select" || upload.files.length === 0) return;
+  if (upload.phase !== "select" || !uploadNamesValid(upload.files.map(uploadName))) return;
   upload.phase = "uploading";
   renderUploadDialog();
 
-  const queue = upload.files.slice();
+  const queue = upload.files.map((file) => ({ file, name: uploadName(file).trim() }));
   const worker = async () => {
     while (queue.length) {
-      const file = queue.shift();
+      const { file, name } = queue.shift();
       try {
-        await graph.uploadFile(upload.folder ? upload.folder.id : null, file);
-        upload.results.set(file.name, { status: "success" });
+        await graph.uploadFile(upload.folder ? upload.folder.id : null, file, name);
+        upload.results.set(file, { status: "success" });
       } catch (err) {
-        upload.results.set(file.name, { status: "failed", error: errorDump(err) });
+        upload.results.set(file, { status: "failed", error: errorDump(err) });
       }
       if (state.upload === upload) renderUploadDialog();
     }

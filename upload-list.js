@@ -14,3 +14,8 @@ export function mergeFiles(existing, incoming) {
   }
   return merged;
 }
+
+// True when there is something to upload and every target name is non-blank.
+export function uploadNamesValid(names) {
+  return names.length > 0 && names.every((name) => name.trim() !== "");
+}
