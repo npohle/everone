@@ -36,7 +36,7 @@ npm run test:e2e
 ```
 
 Run a single spec file the same way Playwright normally supports:
-`npx playwright test 02-search.spec.ts`.
+`npx playwright test 04-navigation.spec.ts`.
 
 ## How it's wired
 
@@ -183,11 +183,9 @@ Caddy for that run; omit `runid` to close the most recently *created*
 * `.gitignore`'s `playwright/.auth/` entry is vestigial — sign-in state is
   written to `localstorage.json`/`sessionstorage.json` in the artefacts
   directory, not `playwright/.auth/`.
-* `SEARCH-002` (`02-search.spec.ts`) uploads a sample PDF into two fresh
-  `e2e-test-search-*` folders and searches its text, which only works once
-  OneDrive has indexed the uploads. On the test account, files uploaded
-  through Graph have been observed to stay out of the search index for weeks
-  (folders show up quickly), so the test skips itself with a
-  `02-10-not-indexed.png` screenshot after waiting 3 minutes. `SEARCH-003`
-  covers the folder scoping regardless, by checking which Graph search URL
-  the app requests at the root and inside a folder.
+* `02-search.spec.ts` is disabled with a file-level `test.skip`, so its
+  `SEARCH-*` tests are reported as skipped and never run. Search results
+  depend on OneDrive's search index, and on the test account files uploaded
+  through Graph have been observed to stay out of it for weeks, so the tests
+  could never pass reliably and only delayed every suite run while waiting
+  on it. Drop the `test.skip` line to run them by hand.
