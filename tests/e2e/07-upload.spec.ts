@@ -18,6 +18,36 @@ function createLocalFiles(...names: string[]): Record<string, string> {
   }));
 }
 
+// Writes a minimal PDF with one line of text per page into a fresh temp
+// directory and returns its absolute path.
+function createLocalPdf(name: string, pageTexts: string[]): string {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    `<< /Type /Pages /Kids [${pageTexts.map((_, i) => `${4 + 2 * i} 0 R`).join(" ")}] /Count ${pageTexts.length} >>`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  pageTexts.forEach((text, i) => {
+    const stream = `BT /F1 36 Tf 72 700 Td (${text}) Tj ET`;
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + 2 * i} 0 R >>`,
+      `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+    );
+  });
+  let pdf = "%PDF-1.4\n";
+  const offsets = objects.map((body, i) => {
+    const offset = pdf.length;
+    pdf += `${i + 1} 0 obj\n${body}\nendobj\n`;
+    return offset;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("");
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  const file = path.join(mkdtempSync(path.join(tmpdir(), "e2e-upload-")), name);
+  writeFileSync(file, pdf, "latin1");
+  return file;
+}
+
 async function openDocuments(page: Page) {
   await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
@@ -266,4 +296,77 @@ test("UPLOAD-003: files that already exist are marked as failed, others still up
   } finally {
     await removeFromDocuments(page, folderName);
   }
+});
+
+test("UPLOAD-004: the Upload dialog previews the selected file next to the list", async ({ page }) => {
+  const artefactsDir = process.env.ARTEFACTS_DIR;
+  const pdf = createLocalPdf("2020-02-02_preview.pdf", ["Upload preview page 1", "Upload preview page 2"]);
+  const files = createLocalFiles("notes.txt");
+  const viewport = page.viewportSize()!;
+
+  await openDocuments(page);
+  const dialog = await openUploadDialog(page);
+
+  // The dialog uses (almost) the whole viewport.
+  const box = (await dialog.boundingBox())!;
+  expect(box.width).toBeGreaterThan(viewport.width * 0.9);
+  expect(box.height).toBeGreaterThan(viewport.height * 0.9);
+
+  const preview = dialog.getByRole("region", { name: "Upload preview" });
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText("Select a file from the list to preview it here.");
+  await page.screenshot({ path: `${artefactsDir}/07-30-empty-preview.png` });
+
+  // The list sits to the left of the preview, which gets the larger share
+  // of the space.
+  const fileList = dialog.getByRole("list", { name: "Files to upload" });
+  const previewBox = (await preview.boundingBox())!;
+  const sideBox = (await dialog.getByRole("heading", { name: "Upload Files" }).boundingBox())!;
+  expect(previewBox.x).toBeGreaterThan(sideBox.x);
+  expect(previewBox.width).toBeGreaterThan(box.width * 0.4);
+
+  // The first picked file is previewed right away: every PDF page is
+  // rendered, at nearly the pane's full width.
+  await pickFiles(page, dialog, [pdf, files["notes.txt"]]);
+  const entries = fileList.getByRole("listitem");
+  await expect(entries).toHaveCount(2);
+  await expect(entries.nth(0)).toHaveAttribute("aria-current", "true");
+  await expect(preview.locator(".viewer-title")).toHaveText("2020-02-02_preview.pdf");
+  const pages = preview.locator("canvas.pdf-page");
+  await expect(pages).toHaveCount(2);
+  const pageBox = (await pages.first().boundingBox())!;
+  expect(pageBox.width).toBeGreaterThan(previewBox.width * 0.85);
+  await page.screenshot({ path: `${artefactsDir}/07-31-pdf-preview.png` });
+
+  // Name inputs are wide enough for long names (twice the old 560px dialog).
+  const rename = dialog.getByRole("textbox", { name: "Upload 2020-02-02_preview.pdf as" });
+  expect((await rename.boundingBox())!.width).toBeGreaterThan(viewport.width >= 1600 ? 400 : 250);
+
+  // Clicking another row previews that file instead.
+  await entries.nth(1).getByText("notes.txt", { exact: true }).click();
+  await expect(entries.nth(1)).toHaveAttribute("aria-current", "true");
+  await expect(entries.nth(0)).not.toHaveAttribute("aria-current", "true");
+  await expect(preview.locator(".viewer-title")).toHaveText("notes.txt");
+  await expect(preview.locator("pre")).toHaveText(readFileSync(files["notes.txt"], "utf8"));
+  await expect(pages).toHaveCount(0);
+  await page.screenshot({ path: `${artefactsDir}/07-32-text-preview.png` });
+
+  // Focusing a name input previews its file, so it can guide the new name.
+  await rename.focus();
+  await expect(entries.nth(0)).toHaveAttribute("aria-current", "true");
+  await expect(pages).toHaveCount(2);
+
+  // Removing the previewed file moves the preview on to the next one.
+  await dialog.getByRole("button", { name: "Remove 2020-02-02_preview.pdf" }).click();
+  await expect(entries).toHaveCount(1);
+  await expect(entries.nth(0)).toHaveAttribute("aria-current", "true");
+  await expect(preview.locator(".viewer-title")).toHaveText("notes.txt");
+
+  // Removing the last file empties the preview again.
+  await dialog.getByRole("button", { name: "Remove notes.txt" }).click();
+  await expect(entries).toHaveCount(0);
+  await expect(preview).toContainText("Select a file from the list to preview it here.");
+
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
 });

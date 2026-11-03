@@ -3,7 +3,8 @@ import * as auth from "./auth.js";
 import * as cfAuth from "./cloudflare-auth.js";
 import * as graph from "./graph.js";
 import * as viewer from "./viewer.js";
-import { mergeFiles, uploadNamesValid } from "./upload-list.js";
+import * as uploadPreview from "./upload-preview.js";
+import { mergeFiles, uploadNamesValid, selectionAfterRemoval } from "./upload-list.js";
 
 const els = {
   signedOut: document.getElementById("signed-out"),
@@ -65,9 +66,10 @@ const state = {
   // True while a folder listing or search request is in flight.
   loading: false,
   // Upload dialog: target folder, picked files, the name each file is
-  // uploaded as and its result (both keyed by File). phase is "select"
-  // (editable), "uploading" (read-only) or "done".
-  upload: { folder: null, files: [], names: new Map(), results: new Map(), phase: "select" },
+  // uploaded as and its result (both keyed by File), and the file shown in
+  // the preview pane. phase is "select" (editable), "uploading" (read-only)
+  // or "done".
+  upload: { folder: null, files: [], names: new Map(), results: new Map(), selected: null, phase: "select" },
 };
 
 function showToast(msg, ms = 4000) {
@@ -305,10 +307,12 @@ function openUploadDialog() {
     files: [],
     names: new Map(),
     results: new Map(),
+    selected: null,
     phase: "select",
   };
   els.uploadPath.textContent = currentFolderPath();
   els.uploadInput.value = "";
+  uploadPreview.clear();
   renderUploadDialog();
   els.uploadDialog.showModal();
 }
@@ -328,6 +332,10 @@ function renderUploadDialog() {
   els.uploadList.replaceChildren();
   for (const file of files) {
     const li = document.createElement("li");
+    // Clicking a row (other than its remove button) previews that file.
+    li.addEventListener("click", (e) => {
+      if (!e.target.closest(".upload-remove")) selectUploadFile(file);
+    });
     const name = document.createElement("span");
     name.className = "upload-name";
     name.textContent = file.name;
@@ -346,6 +354,8 @@ function renderUploadDialog() {
       state.upload.names.set(file, rename.value);
       updateUploadStart();
     });
+    // Renaming a file shows it, so its content can guide the new name.
+    rename.addEventListener("focus", () => selectUploadFile(file));
     li.appendChild(rename);
 
     if (phase === "select") {
@@ -356,6 +366,7 @@ function renderUploadDialog() {
       remove.setAttribute("aria-label", `Remove ${file.name}`);
       remove.title = "Remove";
       remove.addEventListener("click", () => {
+        state.upload.selected = selectionAfterRemoval(state.upload.files, file, state.upload.selected);
         state.upload.files = state.upload.files.filter((f) => f !== file);
         state.upload.names.delete(file);
         renderUploadDialog();
@@ -374,6 +385,7 @@ function renderUploadDialog() {
     }
     els.uploadList.appendChild(li);
   }
+  showUploadSelection();
 
   const editable = phase === "select";
   els.uploadSelect.disabled = !editable;
@@ -383,6 +395,28 @@ function renderUploadDialog() {
   els.uploadClose.hidden = phase !== "done";
 }
 
+function selectUploadFile(file) {
+  if (state.upload.selected === file) return;
+  state.upload.selected = file;
+  showUploadSelection();
+}
+
+// Highlights the selected row in place (re-rendering would steal focus from
+// a name input) and shows the file in the preview pane.
+function showUploadSelection() {
+  const { files, selected } = state.upload;
+  Array.from(els.uploadList.children).forEach((li, i) => {
+    const isSelected = files[i] === selected;
+    li.classList.toggle("selected", isSelected);
+    if (isSelected) li.setAttribute("aria-current", "true");
+    else li.removeAttribute("aria-current");
+  });
+  // Uploads can still finish after an Escape closed the dialog; don't load
+  // a preview nobody sees.
+  if (selected && els.uploadDialog.open) uploadPreview.show(selected);
+  else uploadPreview.clear();
+}
+
 function updateUploadStart() {
   const { files, phase } = state.upload;
   els.uploadStart.disabled = phase !== "select" || !uploadNamesValid(files.map(uploadName));
@@ -390,7 +424,10 @@ function updateUploadStart() {
 
 function addUploadFiles(fileList) {
   if (state.upload.phase !== "select") return;
+  const before = state.upload.files.length;
   state.upload.files = mergeFiles(state.upload.files, fileList);
+  // Preview the first newly picked file.
+  if (state.upload.files.length > before) state.upload.selected = state.upload.files[before];
   // Reset so picking the same file again still fires "change".
   els.uploadInput.value = "";
   renderUploadDialog();
@@ -697,6 +734,7 @@ function wireEvents() {
   // Once anything was uploaded, closing (via Close or Escape) refreshes the
   // listing so the new files show up.
   els.uploadDialog.addEventListener("close", () => {
+    uploadPreview.clear();
     if (state.upload.phase === "done") loadCurrent();
   });
   els.loadMore.addEventListener("click", loadMore);
