@@ -5,6 +5,7 @@ import {
   uploadNamesValid,
   uploadPreviewKind,
   selectionAfterRemoval,
+  canSuggestName,
 } from "../../upload-list.js";
 
 const file = (name, size = 1, type = "") => ({ name, size, type });
@@ -89,4 +90,14 @@ test("selectionAfterRemoval clears the selection when the last file goes", () =>
   const a = file("a");
   assert.equal(selectionAfterRemoval([a], a, a), null);
   assert.equal(selectionAfterRemoval([], null, null), null);
+});
+
+test("canSuggestName only accepts names ending in .pdf", () => {
+  assert.equal(canSuggestName(file("scan.pdf")), true);
+  assert.equal(canSuggestName(file("SCAN.PDF")), true);
+  // Judged by the suffix alone, not the MIME type.
+  assert.equal(canSuggestName(file("scan", 1, "application/pdf")), false);
+  assert.equal(canSuggestName(file("notes.txt", 1, "application/pdf")), false);
+  assert.equal(canSuggestName(file("pdf")), false);
+  assert.equal(canSuggestName(file("photo.png")), false);
 });

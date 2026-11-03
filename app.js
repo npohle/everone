@@ -4,7 +4,8 @@ import * as cfAuth from "./cloudflare-auth.js";
 import * as graph from "./graph.js";
 import * as viewer from "./viewer.js";
 import * as uploadPreview from "./upload-preview.js";
-import { mergeFiles, uploadNamesValid, selectionAfterRemoval } from "./upload-list.js";
+import { mergeFiles, uploadNamesValid, selectionAfterRemoval, canSuggestName } from "./upload-list.js";
+import { suggestFileName } from "./extract.js";
 
 const els = {
   signedOut: document.getElementById("signed-out"),
@@ -46,6 +47,7 @@ const els = {
   uploadInput: document.getElementById("upload-input"),
   uploadSelect: document.getElementById("upload-select"),
   uploadList: document.getElementById("upload-list"),
+  uploadMessage: document.getElementById("upload-message"),
   uploadCancel: document.getElementById("upload-cancel"),
   uploadStart: document.getElementById("upload-start"),
   uploadClose: document.getElementById("upload-close"),
@@ -67,9 +69,10 @@ const state = {
   loading: false,
   // Upload dialog: target folder, picked files, the name each file is
   // uploaded as and its result (both keyed by File), and the file shown in
-  // the preview pane. phase is "select" (editable), "uploading" (read-only)
+  // the preview pane, plus the files whose name is being suggested by
+  // Extract right now. phase is "select" (editable), "uploading" (read-only)
   // or "done".
-  upload: { folder: null, files: [], names: new Map(), results: new Map(), selected: null, phase: "select" },
+  upload: { folder: null, files: [], names: new Map(), results: new Map(), selected: null, suggesting: new Set(), phase: "select" },
 };
 
 function showToast(msg, ms = 4000) {
@@ -308,10 +311,12 @@ function openUploadDialog() {
     names: new Map(),
     results: new Map(),
     selected: null,
+    suggesting: new Set(),
     phase: "select",
   };
   els.uploadPath.textContent = currentFolderPath();
   els.uploadInput.value = "";
+  els.uploadMessage.textContent = "";
   uploadPreview.clear();
   renderUploadDialog();
   els.uploadDialog.showModal();
@@ -359,6 +364,8 @@ function renderUploadDialog() {
     li.appendChild(rename);
 
     if (phase === "select") {
+      li.appendChild(suggestButton(file));
+
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "upload-remove";
@@ -433,6 +440,71 @@ function addUploadFiles(fileList) {
   renderUploadDialog();
 }
 
+// The magic wand that suggests a name for `file`; only PDFs can be read.
+function suggestButton(file) {
+  const suggest = document.createElement("button");
+  suggest.type = "button";
+  suggest.className = "upload-suggest";
+  suggest.textContent = "🪄";
+  suggest.setAttribute("aria-label", `Suggest a name for ${file.name}`);
+  if (!canSuggestName(file)) {
+    suggest.disabled = true;
+    suggest.title = "Names can only be suggested for PDFs";
+  } else if (state.upload.suggesting.has(file)) {
+    suggest.disabled = true;
+    suggest.classList.add("busy");
+    suggest.setAttribute("aria-busy", "true");
+    suggest.title = "Suggesting a name…";
+  } else {
+    suggest.title = "Suggest a name from the document's creation date, sender and subject";
+  }
+  suggest.addEventListener("click", () => suggestUploadName(file));
+  return suggest;
+}
+
+// Swaps a row's wand for a fresh one in place: re-rendering the whole list
+// would steal focus from a name input being typed in.
+function updateSuggestButton(file) {
+  const li = els.uploadList.children[state.upload.files.indexOf(file)];
+  const old = li && li.querySelector(".upload-suggest");
+  if (old) old.replaceWith(suggestButton(file));
+}
+
+// Fills a file's name input with <creation_date>_<sender>-<subject>.pdf, read
+// from its first page by Extract (see viewer.js). The result itself isn't
+// shown. Problems are reported inside the dialog: a toast would sit behind it.
+async function suggestUploadName(file) {
+  const upload = state.upload;
+  if (upload.phase !== "select" || upload.suggesting.has(file) || !canSuggestName(file)) return;
+  if (!cfAuth.isSignedIn()) {
+    els.uploadMessage.textContent = "Sign in to Cloudflare to suggest file names.";
+    return;
+  }
+  els.uploadMessage.textContent = "";
+  upload.suggesting.add(file);
+  updateSuggestButton(file);
+  let name = null;
+  let problem = "";
+  try {
+    name = suggestFileName(await viewer.extractFields(file.arrayBuffer()));
+    if (!name) problem = `No creation date, sender or subject found in ${file.name}.`;
+  } catch (err) {
+    console.error("Name suggestion failed", err);
+    problem = `Couldn't suggest a name for ${file.name}: ${(err && err.message) || "Unknown error"}`;
+  }
+  upload.suggesting.delete(file);
+  // The dialog may have been reopened, the file removed or the upload
+  // started in the meantime.
+  if (state.upload !== upload || upload.phase !== "select" || !upload.files.includes(file)) return;
+  updateSuggestButton(file);
+  if (problem) els.uploadMessage.textContent = problem;
+  if (!name) return;
+  upload.names.set(file, name);
+  const rename = els.uploadList.children[upload.files.indexOf(file)].querySelector(".upload-rename");
+  rename.value = name;
+  updateUploadStart();
+}
+
 // Uploads a few files at a time; each one reports success or failure on its
 // own, so one rejected file doesn't stop the rest.
 const UPLOAD_CONCURRENCY = 3;
@@ -441,6 +513,7 @@ async function startUpload() {
   const upload = state.upload;
   if (upload.phase !== "select" || !uploadNamesValid(upload.files.map(uploadName))) return;
   upload.phase = "uploading";
+  els.uploadMessage.textContent = "";
   renderUploadDialog();
 
   const queue = upload.files.map((file) => ({ file, name: uploadName(file).trim() }));
