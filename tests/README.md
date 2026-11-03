@@ -183,3 +183,11 @@ Caddy for that run; omit `runid` to close the most recently *created*
 * `.gitignore`'s `playwright/.auth/` entry is vestigial — sign-in state is
   written to `localstorage.json`/`sessionstorage.json` in the artefacts
   directory, not `playwright/.auth/`.
+* `SEARCH-002` (`02-search.spec.ts`) uploads a sample PDF into two fresh
+  `e2e-test-search-*` folders and searches its text, which only works once
+  OneDrive has indexed the uploads. On the test account, files uploaded
+  through Graph have been observed to stay out of the search index for weeks
+  (folders show up quickly), so the test skips itself with a
+  `02-10-not-indexed.png` screenshot after waiting 3 minutes. `SEARCH-003`
+  covers the folder scoping regardless, by checking which Graph search URL
+  the app requests at the root and inside a folder.

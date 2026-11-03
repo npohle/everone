@@ -1,4 +1,6 @@
+import { randomBytes } from "node:crypto";
 import { test, expect } from "./fixtures.ts";
+import type { Locator, Page } from "@playwright/test";
 
 // The search box has no submit button — app.js runs the search on debounced
 // input once the query is 2+ characters (see app.js's "input" listener).
@@ -29,4 +31,166 @@ test('SEARCH-001: search for "Anywhere"', async ({ page }) => {
   await page.getByPlaceholder("Search OneDrive…").fill("Anywhere");
   await expect(page.getByText("match")).toBeVisible();
   await page.screenshot({ path: `${artefactsDir}/02-01-results.png` });
+});
+
+const SAMPLE_PDF_URL = "https://www.successcontrol.de/wp-content/uploads/2021/03/Lieferschein-Muster-PDF.pdf";
+const SAMPLE_PDF_NAME = "Lieferschein-Muster-PDF.pdf";
+
+const randomSearchFolderName = () => `e2e-test-search-${randomBytes(6).toString("hex")}`;
+
+// Creates a folder in the drive root via the app's own signed-in Graph client
+// and returns its id.
+async function createRootFolder(page: Page, name: string): Promise<string> {
+  return page.evaluate(async (name) => {
+    const graph = await import("./graph.js");
+    return (await graph.createFolder(null, name)).id;
+  }, name);
+}
+
+// Uploads the PDF (passed as base64) into the given folder.
+async function uploadPdf(page: Page, folderId: string, pdfBase64: string) {
+  await page.evaluate(async ({ folderId, fileName, pdfBase64 }) => {
+    const graph = await import("./graph.js");
+    const bytes = Uint8Array.from(atob(pdfBase64), (c) => c.charCodeAt(0));
+    await graph.uploadFile(folderId, new File([bytes], fileName, { type: "application/pdf" }));
+  }, { folderId, fileName: SAMPLE_PDF_NAME, pdfBase64 });
+}
+
+// Best-effort cleanup of a folder in the drive root, contents included —
+// Graph deletes recursively.
+async function removeFromRoot(page: Page, name: string) {
+  await page.evaluate(async (name) => {
+    const { getToken } = await import("./auth.js");
+    const { config } = await import("./config.js");
+    const token = await getToken();
+    const res = await fetch(
+      `${config.graphBase}/me/drive/root:/${encodeURIComponent(name)}`,
+      { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`Cleanup failed: ${res.status} ${await res.text()}`);
+    }
+  }, name);
+}
+
+async function openRoot(page: Page) {
+  await page.goto(`https://rubisco.io/`);
+  await expect(page.getByText("Loading")).not.toBeVisible();
+}
+
+async function openFolder(page: Page, name: string) {
+  await page.locator("#listing").getByText(name, { exact: true }).click();
+  await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(name);
+  await expect(page.getByText("Loading")).not.toBeVisible();
+}
+
+// Clearing the search box drops back to the current folder's listing.
+async function clearSearch(page: Page) {
+  await page.getByPlaceholder("Search OneDrive…").fill("");
+  await expect(page.locator("#status")).toHaveText(/^\d+ items?\+?$/);
+  await expect(page.getByText("Loading")).not.toBeVisible();
+}
+
+// Types the query and waits for its results; returns the Graph search
+// request the app sent for it.
+async function search(page: Page, query: string) {
+  const request = page.waitForRequest((req) => req.url().includes("/search(q="));
+  await page.getByPlaceholder("Search OneDrive…").fill(query);
+  await expect(page.locator("#status")).toHaveText(/^\d+ match(es)?\+?$/);
+  return request;
+}
+
+// Freshly uploaded files take a while to show up in OneDrive's search index,
+// so the search is re-run until `check` passes on the result listing.
+async function searchUntil(page: Page, query: string, timeout: number, check: (results: Locator) => Promise<void>) {
+  const results = page.locator("#listing .row:not(.head)");
+  await expect(async () => {
+    await clearSearch(page);
+    await search(page, query);
+    await check(results);
+  }).toPass({ timeout, intervals: [10_000] });
+}
+
+// OneDrive indexes uploaded files for search with a lag that can't be
+// controlled from here (on the test account, files uploaded through Graph
+// have been observed to stay unsearchable for weeks). If the PDFs never show
+// up in the root search, the test is skipped with a 02-10-not-indexed.png
+// screenshot rather than failed; SEARCH-003 covers the scoping regardless.
+test('SEARCH-002: search for "Travelstar" is limited to the selected folder', async ({ page }) => {
+  test.setTimeout(8 * 60_000);
+  const artefactsDir = process.env.ARTEFACTS_DIR;
+  const folderNames = [randomSearchFolderName(), randomSearchFolderName()];
+
+  const res = await fetch(SAMPLE_PDF_URL);
+  expect(res.ok).toBe(true);
+  const pdfBase64 = Buffer.from(await res.arrayBuffer()).toString("base64");
+
+  await openRoot(page);
+  try {
+    for (const name of folderNames) {
+      await uploadPdf(page, await createRootFolder(page, name), pdfBase64);
+    }
+
+    // Root: the PDF is found in both test folders (and possibly elsewhere).
+    await openRoot(page);
+    try {
+      await searchUntil(page, "Travelstar", 3 * 60_000, async (results) => {
+        expect(await results.filter({ hasText: SAMPLE_PDF_NAME }).count()).toBeGreaterThanOrEqual(2);
+      });
+    } catch {
+      await page.screenshot({ path: `${artefactsDir}/02-10-not-indexed.png` });
+      test.skip(true, "OneDrive hasn't indexed the uploaded PDFs for search yet");
+    }
+    await expect(page.locator("#breadcrumbs")).toHaveText("Search in /: “Travelstar”");
+    await page.screenshot({ path: `${artefactsDir}/02-10-root-results.png` });
+
+    await clearSearch(page);
+    await expect(page.getByPlaceholder("Search OneDrive…")).toHaveValue("");
+
+    // Selected folder: only its own copy of the PDF is found.
+    await openFolder(page, folderNames[0]);
+    await searchUntil(page, "Travelstar", 60_000, async (results) => {
+      await expect(page.locator("#status")).toHaveText("1 match");
+      await expect(results).toHaveCount(1);
+      await expect(results).toContainText(SAMPLE_PDF_NAME);
+    });
+    await expect(page.locator("#breadcrumbs")).toHaveText(`Search in /${folderNames[0]}: “Travelstar”`);
+    await page.screenshot({ path: `${artefactsDir}/02-11-folder-results.png` });
+  } finally {
+    for (const name of folderNames) {
+      await removeFromRoot(page, name);
+    }
+  }
+});
+
+// Checks the scoping on the Graph requests the app sends, so it holds
+// independently of OneDrive's search index.
+test("SEARCH-003: search requests are scoped to the selected folder", async ({ page }) => {
+  const artefactsDir = process.env.ARTEFACTS_DIR;
+  const folderName = randomSearchFolderName();
+
+  await openRoot(page);
+  try {
+    const folderId = await createRootFolder(page, folderName);
+    await openRoot(page);
+
+    let request = await search(page, "Travelstar");
+    expect(request.url()).toContain("/me/drive/root/search(q='Travelstar')");
+    await expect(page.locator("#breadcrumbs")).toHaveText("Search in /: “Travelstar”");
+    await page.screenshot({ path: `${artefactsDir}/02-20-root-search.png` });
+
+    await clearSearch(page);
+    await openFolder(page, folderName);
+    request = await search(page, "Travelstar");
+    expect(request.url()).toContain(`/me/drive/items/${encodeURIComponent(folderId)}/search(q='Travelstar')`);
+    await expect(page.locator("#breadcrumbs")).toHaveText(`Search in /${folderName}: “Travelstar”`);
+    await expect(page.locator("#listing")).toContainText("No matching files.");
+    await page.screenshot({ path: `${artefactsDir}/02-21-folder-search.png` });
+
+    // Clearing the search returns to the selected folder, not the root.
+    await clearSearch(page);
+    await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(folderName);
+  } finally {
+    await removeFromRoot(page, folderName);
+  }
 });

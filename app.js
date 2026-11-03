@@ -497,13 +497,16 @@ async function runSearch(query) {
   els.loading.hidden = false;
   els.loadMore.hidden = true;
   setStatus("");
+  // The search is limited to the folder selected in the explorer (the whole
+  // drive at the root).
+  const folder = state.stack[state.stack.length - 1];
   // Clear breadcrumbs visually to a search view.
   els.breadcrumbs.replaceChildren(Object.assign(document.createElement("span"), {
-    textContent: `Search: “${query}”`,
+    textContent: `Search in ${currentFolderPath()}: “${query}”`,
   }));
 
   try {
-    const page = await graph.search(query, state.sort);
+    const page = await graph.search(query, state.sort, folder ? folder.id : null);
     if (id !== state.loadId) return;
     state.items = page.value || [];
     state.nextLink = page["@odata.nextLink"] || null;
