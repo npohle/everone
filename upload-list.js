@@ -45,3 +45,9 @@ export function selectionAfterRemoval(files, removed, selected) {
   if (i < 0) return null;
   return files[i + 1] ?? files[i - 1] ?? null;
 }
+
+// Whether a file name can be suggested for `file` from its extracted fields.
+// Extraction only reads PDFs, judged here by the suffix alone.
+export function canSuggestName(file) {
+  return /.\.pdf$/i.test(file.name);
+}

@@ -588,6 +588,8 @@ button.danger:hover { filter: brightness(0.9); }
   margin-top: auto;
   padding-top: 16px;
 }
+.upload-message { align-self: stretch; margin: 8px 0 0; color: var(--danger); white-space: pre-wrap; }
+.upload-message:empty { display: none; }
 .upload-preview { min-height: 0; }
 .upload-preview .viewer-title { flex: 1 1 auto; }
 
@@ -607,7 +609,7 @@ button.danger:hover { filter: brightness(0.9); }
    inputs and the trailing icon line up like table columns. */
 .upload-list li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px 28px;
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
@@ -630,8 +632,10 @@ button.danger:hover { filter: brightness(0.9); }
   padding: 4px 8px;
 }
 .upload-rename:disabled { opacity: 0.7; }
-.upload-remove, .upload-status { justify-self: center; }
-.upload-remove {
+.upload-suggest, .upload-remove, .upload-status { justify-self: center; }
+/* The status icon takes the place of both buttons once uploading starts. */
+.upload-status { grid-column: span 2; }
+.upload-suggest, .upload-remove {
   padding: 0 6px;
   line-height: 20px;
   background: transparent;
@@ -639,6 +643,9 @@ button.danger:hover { filter: brightness(0.9); }
   color: var(--muted);
 }
 .upload-remove:hover { color: var(--danger); }
+.upload-suggest:disabled { opacity: 0.35; cursor: not-allowed; }
+.upload-suggest.busy { opacity: 1; cursor: progress; animation: upload-pulse 1s ease-in-out infinite alternate; }
+@keyframes upload-pulse { to { opacity: 0.3; } }
 .upload-status {
   display: inline-block;
   width: 16px;

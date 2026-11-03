@@ -135,6 +135,20 @@ async function renderFirstPageImage(data) {
   }
 }
 
+// Runs Extract on the first page of the PDF `data` (an ArrayBuffer, or a
+// promise of one, so a download can overlap the account lookup) with the
+// signed-in Cloudflare account and returns the model's result. Also used by
+// the Upload dialog to suggest file names.
+export async function extractFields(data) {
+  const accessToken = cfAuth.getToken();
+  const [account, dataUrl] = await Promise.all([
+    cfAuth.fetchFirstAccount(accessToken),
+    Promise.resolve(data).then(renderFirstPageImage).then(blobToDataUrl),
+  ]);
+  if (!account) throw new Error("No Cloudflare account available");
+  return runExtract({ accountId: account.id, accessToken, dataUrl });
+}
+
 // Monotonic id, as for Scribe.
 let extractId = 0;
 
@@ -149,17 +163,7 @@ async function runExtractForCurrent() {
   els.extractResult.value = "";
   els.extractDialog.showModal();
   try {
-    const accessToken = cfAuth.getToken();
-    const [account, dataUrl] = await Promise.all([
-      cfAuth.fetchFirstAccount(accessToken),
-      graph.fetchContent(item)
-        .then((blob) => blob.arrayBuffer())
-        .then((data) => renderFirstPageImage(data))
-        .then(blobToDataUrl),
-    ]);
-    if (id !== extractId) return;
-    if (!account) throw new Error("No Cloudflare account available");
-    const result = await runExtract({ accountId: account.id, accessToken, dataUrl });
+    const result = await extractFields(graph.fetchContent(item).then((blob) => blob.arrayBuffer()));
     if (id !== extractId) return;
     els.extractResult.value = formatExtractResult(result);
     els.extractStatus.textContent = "";

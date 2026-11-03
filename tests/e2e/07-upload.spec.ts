@@ -5,6 +5,12 @@ import path from "node:path";
 import { test, expect } from "./fixtures.ts";
 import type { Locator, Page } from "@playwright/test";
 
+// UPLOAD-005 holds a real Cloudflare API token, which ends up in the
+// sessionStorage init script and in the request to the extract proxy. Traces
+// record both, and Playwright only lets a whole file opt out, so keep tracing
+// off for this file (as in 10-extract.spec.ts).
+test.use({ trace: "off" });
+
 const randomFolderName = () => `e2e-test-${randomBytes(6).toString("hex")}`;
 
 // Writes text files with random content into a fresh temp directory and
@@ -46,6 +52,28 @@ function createLocalPdf(name: string, pageTexts: string[]): string {
   const file = path.join(mkdtempSync(path.join(tmpdir(), "e2e-upload-")), name);
   writeFileSync(file, pdf, "latin1");
   return file;
+}
+
+// Downloads `url` into a fresh temp directory and returns the local path.
+async function downloadLocalCopy(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Download of ${url} failed: ${res.status}`);
+  const file = path.join(mkdtempSync(path.join(tmpdir(), "e2e-upload-")), path.basename(new URL(url).pathname));
+  writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+  return file;
+}
+
+// Signs in to Cloudflare the way callback/ leaves it: the token in
+// sessionStorage under cloudflare.token (see cloudflare-auth.js).
+async function signInToCloudflare(page: Page, accessToken: string) {
+  await page.addInitScript((accessToken) => {
+    window.sessionStorage.setItem("cloudflare.token", JSON.stringify({
+      accessToken,
+      tokenType: "bearer",
+      scope: "",
+      expiresAt: Date.now() + 3600_000,
+    }));
+  }, accessToken);
 }
 
 async function openDocuments(page: Page) {
@@ -366,6 +394,55 @@ test("UPLOAD-004: the Upload dialog previews the selected file next to the list"
   await dialog.getByRole("button", { name: "Remove notes.txt" }).click();
   await expect(entries).toHaveCount(0);
   await expect(preview).toContainText("Select a file from the list to preview it here.");
+
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+});
+
+const cfToken = process.env.TEST_CF_APITOKEN;
+const SAMPLE_PDF_URL = "https://www.successcontrol.de/wp-content/uploads/2021/03/Lieferschein-Muster-PDF.pdf";
+
+test("UPLOAD-005: the magic wand suggests a file name from the PDF's extracted fields", async ({ page }) => {
+  test.skip(!cfToken, "TEST_CF_APITOKEN is not set");
+  // pdf.js renders the first page, then the model reads it.
+  test.setTimeout(180_000);
+  const artefactsDir = process.env.ARTEFACTS_DIR;
+  const pdf = await downloadLocalCopy(SAMPLE_PDF_URL);
+  const files = createLocalFiles("notes.txt");
+
+  await signInToCloudflare(page, cfToken!);
+  await openDocuments(page);
+  const dialog = await openUploadDialog(page);
+  await pickFiles(page, dialog, [pdf, files["notes.txt"]]);
+  const entries = dialog.getByRole("list", { name: "Files to upload" }).getByRole("listitem");
+  await expect(entries).toHaveCount(2);
+
+  // Every entry has a wand next to its remove icon, but only PDFs can be
+  // read.
+  const pdfWand = dialog.getByRole("button", { name: "Suggest a name for Lieferschein-Muster-PDF.pdf" });
+  const textWand = dialog.getByRole("button", { name: "Suggest a name for notes.txt" });
+  await expect(pdfWand).toBeEnabled();
+  await expect(textWand).toBeDisabled();
+  for (const name of ["Lieferschein-Muster-PDF.pdf", "notes.txt"]) {
+    const wandBox = (await dialog.getByRole("button", { name: `Suggest a name for ${name}` }).boundingBox())!;
+    const removeBox = (await dialog.getByRole("button", { name: `Remove ${name}` }).boundingBox())!;
+    expect(wandBox.x).toBeLessThan(removeBox.x);
+    expect(Math.abs(wandBox.y - removeBox.y)).toBeLessThan(wandBox.height);
+  }
+  await page.screenshot({ path: `${artefactsDir}/07-40-wands.png` });
+
+  const rename = dialog.getByLabel("Upload Lieferschein-Muster-PDF.pdf as");
+  await expect(rename).toHaveValue("Lieferschein-Muster-PDF.pdf");
+  await pdfWand.click();
+
+  // The suggestion replaces the name; the extraction result isn't shown.
+  await expect(rename).toHaveValue(/2021-03-16/, { timeout: 120_000 });
+  await expect(rename).toHaveValue(/Lieferschein/i);
+  await expect(rename).toHaveValue(/^2021-03-16_.+\.pdf$/);
+  await expect(page.getByRole("dialog", { name: "Extracted Fields" })).not.toBeVisible();
+  await expect(pdfWand).toBeEnabled();
+  await expect(dialog.getByLabel("Upload notes.txt as")).toHaveValue("notes.txt");
+  await page.screenshot({ path: `${artefactsDir}/07-41-suggested-name.png` });
 
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).not.toBeVisible();

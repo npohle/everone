@@ -7,6 +7,8 @@ import {
   blobToDataUrl,
   runExtract,
   formatExtractResult,
+  extractedValue,
+  suggestFileName,
 } from "../../extract.js";
 import { config } from "../../config.js";
 
@@ -133,4 +135,52 @@ test("runExtract falls back to the HTTP status when there's no message", async (
 
 test("formatExtractResult pretty-prints the result as JSON", () => {
   assert.equal(formatExtractResult(ANSWERS), JSON.stringify(ANSWERS, null, 2));
+});
+
+test("extractedValue reads a field's value from the model's answers", () => {
+  assert.equal(extractedValue(ANSWERS, "sender"), "Muster GmbH");
+  assert.equal(extractedValue(ANSWERS, "creation_date"), "2021-03-16");
+  // Plain string answers are accepted too.
+  assert.equal(extractedValue({ answers: { subject: " Rechnung " } }, "subject"), "Rechnung");
+});
+
+test("extractedValue returns an empty string for missing or empty fields", () => {
+  assert.equal(extractedValue({ answers: { sender: { type: "text", value: null } } }, "sender"), "");
+  assert.equal(extractedValue({ answers: {} }, "subject"), "");
+  assert.equal(extractedValue({}, "subject"), "");
+  assert.equal(extractedValue(null, "subject"), "");
+});
+
+test("suggestFileName follows <creation_date>_<sender>-<subject>.pdf", () => {
+  assert.equal(suggestFileName(ANSWERS), "2021-03-16_Muster GmbH-Lieferschein.pdf");
+});
+
+test("suggestFileName normalises German and ISO date-times to YYYY-MM-DD", () => {
+  const withDate = (value) => ({ answers: { ...ANSWERS.answers, creation_date: { type: "date", value } } });
+  assert.equal(suggestFileName(withDate("16.03.2021")), "2021-03-16_Muster GmbH-Lieferschein.pdf");
+  assert.equal(suggestFileName(withDate("6.3.2021")), "2021-03-06_Muster GmbH-Lieferschein.pdf");
+  assert.equal(suggestFileName(withDate("2021-03-16T10:00:00Z")), "2021-03-16_Muster GmbH-Lieferschein.pdf");
+});
+
+test("suggestFileName replaces characters OneDrive doesn't allow in names", () => {
+  const result = {
+    answers: {
+      sender: { value: "A/B: \"Muster\" GmbH" },
+      creation_date: { value: "2021-03-16" },
+      subject: { value: "Lieferschein\nNr. 12*3?" },
+    },
+  };
+  assert.equal(suggestFileName(result), "2021-03-16_A-B- -Muster- GmbH-Lieferschein Nr. 12-3-.pdf");
+});
+
+test("suggestFileName leaves out missing fields", () => {
+  const { sender, subject } = ANSWERS.answers;
+  assert.equal(suggestFileName({ answers: { sender, subject } }), "Muster GmbH-Lieferschein.pdf");
+  assert.equal(suggestFileName({ answers: { creation_date: { value: "2021-03-16" }, subject } }), "2021-03-16_Lieferschein.pdf");
+  assert.equal(suggestFileName({ answers: { creation_date: { value: "2021-03-16" } } }), "2021-03-16.pdf");
+});
+
+test("suggestFileName returns null when nothing was extracted", () => {
+  assert.equal(suggestFileName({ answers: {} }), null);
+  assert.equal(suggestFileName({}), null);
 });
