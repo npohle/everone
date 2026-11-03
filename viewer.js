@@ -1,5 +1,7 @@
 import * as graph from "./graph.js";
 import { extractPdfText } from "./scribe-text.js";
+import * as cfAuth from "./cloudflare-auth.js";
+import { blobToDataUrl, runExtract, formatExtractResult } from "./extract.js";
 
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "avif"]);
 const VIDEO_EXT = new Set(["mp4", "webm", "ogv", "mov", "m4v"]);
@@ -48,9 +50,14 @@ const els = {
   scribeSource: document.getElementById("scribe-source"),
   scribeStatus: document.getElementById("scribe-status"),
   scribeText: document.getElementById("scribe-text"),
+  extract: document.getElementById("viewer-extract"),
+  extractDialog: document.getElementById("extract-dialog"),
+  extractSource: document.getElementById("extract-source"),
+  extractStatus: document.getElementById("extract-status"),
+  extractResult: document.getElementById("extract-result"),
 };
 
-// Item currently shown in the preview pane, for the Scribe button.
+// Item currently shown in the preview pane, for the Scribe and Extract buttons.
 let currentItem = null;
 // Monotonic id; a slow extraction must not overwrite the result of a newer one.
 let scribeId = 0;
@@ -83,6 +90,81 @@ els.scribe.addEventListener("click", runScribe);
 // Closing abandons any extraction still running so it doesn't fill the
 // textarea behind the user's back.
 els.scribeDialog.addEventListener("close", () => { scribeId++; });
+
+// Longest side of the page image sent to the model, in pixels: legible for
+// small print without approaching clairic's 4 MiB per-image limit.
+const EXTRACT_IMAGE_MAX_PX = 1600;
+const EXTRACT_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+
+const canvasToBlob = (canvas, type, quality) =>
+  new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Could not encode the page image"))), type, quality);
+  });
+
+// Renders the first page of a PDF into an image blob (PNG, or JPEG if the PNG
+// is too large for the model).
+async function renderFirstPageImage(data) {
+  await pdfjsReady;
+  if (!pdfjsLib) throw new Error("PDF renderer failed to load");
+  const task = pdfjsLib.getDocument({ data });
+  try {
+    const doc = await task.promise;
+    const page = await doc.getPage(1);
+    const base = page.getViewport({ scale: 1 });
+    const scale = EXTRACT_IMAGE_MAX_PX / Math.max(base.width, base.height);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    const ctx = canvas.getContext("2d");
+    // Transparent PDF backgrounds would otherwise turn black in a JPEG.
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    const png = await canvasToBlob(canvas, "image/png");
+    return png.size <= EXTRACT_IMAGE_MAX_BYTES ? png : canvasToBlob(canvas, "image/jpeg", 0.85);
+  } finally {
+    task.destroy().catch(() => {});
+  }
+}
+
+// Monotonic id, as for Scribe.
+let extractId = 0;
+
+// Extract: send an image of the PDF's first page to Cloudflare Workers AI's
+// clairic model and show its answer, as JSON, in a modal.
+async function runExtractForCurrent() {
+  const item = currentItem;
+  if (!item) return;
+  const id = ++extractId;
+  els.extractSource.textContent = item.name;
+  els.extractStatus.textContent = "Extracting fields…";
+  els.extractResult.value = "";
+  els.extractDialog.showModal();
+  try {
+    const accessToken = cfAuth.getToken();
+    const [account, dataUrl] = await Promise.all([
+      cfAuth.fetchFirstAccount(accessToken),
+      graph.fetchContent(item)
+        .then((blob) => blob.arrayBuffer())
+        .then((data) => renderFirstPageImage(data))
+        .then(blobToDataUrl),
+    ]);
+    if (id !== extractId) return;
+    if (!account) throw new Error("No Cloudflare account available");
+    const result = await runExtract({ accountId: account.id, accessToken, dataUrl });
+    if (id !== extractId) return;
+    els.extractResult.value = formatExtractResult(result);
+    els.extractStatus.textContent = "";
+  } catch (err) {
+    if (id !== extractId) return;
+    console.error("Extraction failed", err);
+    els.extractStatus.textContent = `Extraction failed: ${(err && err.message) || "Unknown error"}`;
+  }
+}
+
+els.extract.addEventListener("click", runExtractForCurrent);
+els.extractDialog.addEventListener("close", () => { extractId++; });
 
 let activeBlobUrl = null;
 // Monotonic id; pending renders with stale ids are discarded so a slow load
@@ -428,6 +510,9 @@ export async function open(item) {
   els.open.hidden = !item.webUrl;
   currentItem = item;
   els.scribe.hidden = !PDF_EXT.has(extOf(item.name));
+  // Shown for every previewed file, but only usable for PDFs.
+  els.extract.hidden = false;
+  els.extract.disabled = !PDF_EXT.has(extOf(item.name));
 
   const loading = document.createElement("div");
   loading.className = "unsupported";
@@ -475,6 +560,8 @@ export function clear() {
   els.open.hidden = true;
   currentItem = null;
   els.scribe.hidden = true;
+  els.extract.hidden = true;
+  els.extract.disabled = true;
   const placeholder = document.createElement("div");
   placeholder.className = "placeholder";
   placeholder.textContent = "Select a file from the list to preview it here.";

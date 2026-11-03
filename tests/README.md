@@ -26,7 +26,8 @@ TEST_PASSWORD=...
 TEST_TOTP_SEED=...   # base32 secret shared with the authenticator app
 TEST_CF_USERNAME=... # Cloudflare account for 09-cloudflare-auth.spec.ts
 TEST_CF_PASSWORD=...
-TEST_CF_APITOKEN=... # optional: real API token for CFAUTH-002's accounts list
+TEST_CF_APITOKEN=... # real API token for CFAUTH-002's accounts list and
+                     # EXTRACT-001 (skipped without it)
 ```
 
 ## Running the suite
@@ -134,6 +135,14 @@ from the Microsoft one and not part of the saved storage state:
   hands out that real API token and the proxy is called for real; otherwise
   the proxy is answered locally (two accounts). Either way the test checks
   the header shows the first account's name and ID.
+
+**Extract** (`tests/e2e/10-extract.spec.ts`) signs in to Cloudflare by
+seeding `cloudflare.token` in sessionStorage with `TEST_CF_APITOKEN`, then
+runs the preview's Extract button for real on the first document in
+`Documents/e2e-test-search-01` (a pre-existing Lieferschein sample PDF): the
+first page is rendered with pdf.js and sent to the `@cf/cloudflare/clairic`
+model through `https://extract.rubisco.io/cloudflare/ai/run`. The file runs
+with tracing off so the token never ends up in `trace.zip`.
 
 ## Exploring a signed-in session with `playwright-cli`
 

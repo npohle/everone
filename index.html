@@ -73,6 +73,9 @@
             <span id="viewer-title" class="viewer-title">Preview</span>
             <button id="viewer-scribe" type="button" class="viewer-scribe"
                     title="Extract the text content of this PDF with scribe.js" hidden>Scribe</button>
+            <button id="viewer-extract" type="button" class="viewer-scribe"
+                    title="Extract sender, creation date and subject from the first page with Cloudflare Workers AI"
+                    hidden disabled>Extract</button>
             <div class="viewer-actions">
               <a id="viewer-download" href="#" download hidden>Download</a>
               <a id="viewer-open" href="#" target="_blank" rel="noopener" hidden>Open in OneDrive</a>
@@ -134,6 +137,19 @@
                 aria-label="Extracted text" spellcheck="false"></textarea>
       <div class="modal-actions">
         <button id="scribe-close" type="submit" class="primary">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="extract-dialog" class="modal scribe-modal" aria-labelledby="extract-title">
+    <form method="dialog">
+      <h2 id="extract-title">Extracted Fields</h2>
+      <p class="modal-path">Source: <code id="extract-source"></code></p>
+      <p id="extract-status" class="scribe-status" role="status"></p>
+      <textarea id="extract-result" class="scribe-text" readonly
+                aria-label="Extraction result" spellcheck="false"></textarea>
+      <div class="modal-actions">
+        <button id="extract-close" type="submit" class="primary">Close</button>
       </div>
     </form>
   </dialog>

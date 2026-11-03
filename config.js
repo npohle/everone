@@ -37,6 +37,9 @@ export const config = {
     // through this proxy (functions/src/cloudflare-accounts.js), which is
     // POSTed the OAuth access token as { apiToken }.
     accountsUrl: "https://extract.rubisco.io/cloudflare/accounts",
+    // Workers AI model runs (the preview's Extract button, extract.js) go
+    // through the same proxy (functions/src/cloudflare-ai-run.js).
+    aiRunUrl: "https://extract.rubisco.io/cloudflare/ai/run",
     scopes: ["ai.read", "user-details.read", "account-settings.read", "memberships.read", "account-custom-asset.read"],
     redirectUri: "https://rubisco.io/callback",
     appUrl: "https://rubisco.io/",
