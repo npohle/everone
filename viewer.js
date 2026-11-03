@@ -39,6 +39,13 @@ const pdfjsReady = import(
   console.error("pdf.js failed to load", err);
 });
 
+// The warm pdf.js module, for other previews (e.g. the Upload dialog's).
+export async function loadPdfjs() {
+  await pdfjsReady;
+  if (!pdfjsLib) throw new Error("PDF viewer failed to load");
+  return pdfjsLib;
+}
+
 const els = {
   root: document.getElementById("viewer"),
   body: document.getElementById("viewer-body"),

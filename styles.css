@@ -559,11 +559,45 @@ button.danger {
 }
 button.danger:hover { filter: brightness(0.9); }
 
+/* The Upload dialog fills the viewport: files and names on the left, a
+   large preview of the selected file on the right, like the main UI. */
+.modal.upload-modal {
+  width: calc(100vw - 32px);
+  height: calc(100vh - 32px);
+  max-width: none;
+  max-height: none;
+}
+#upload-form {
+  display: grid;
+  /* 1040px is twice the old 560px dialog's content width, so original names
+     and name inputs get double the room; the preview keeps at least half. */
+  grid-template-columns: min(1040px, 50%) minmax(0, 1fr);
+  gap: 20px;
+  height: 100%;
+}
+.upload-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  min-height: 0;
+}
+.upload-side .modal-path { align-self: stretch; }
+.upload-side .modal-actions {
+  align-self: stretch;
+  margin-top: auto;
+  padding-top: 16px;
+}
+.upload-preview { min-height: 0; }
+.upload-preview .viewer-title { flex: 1 1 auto; }
+
 .upload-list {
+  align-self: stretch;
+  flex: 0 1 auto;
+  min-height: 0;
   list-style: none;
   margin: 12px 0 0;
   padding: 0;
-  max-height: 40vh;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -580,13 +614,16 @@ button.danger:hover { filter: brightness(0.9); }
   border-bottom: 1px solid var(--border);
 }
 .upload-list li:last-child { border-bottom: 0; }
+.upload-list li { cursor: pointer; }
+.upload-list li.selected {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
 .upload-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.upload-modal { width: min(90vw, 560px); }
 .modal .upload-rename {
   min-width: 0;
   box-sizing: border-box;
@@ -618,3 +655,13 @@ button.danger:hover { filter: brightness(0.9); }
 .upload-status.success { color: #1a7f37; }
 .upload-status.failed { color: var(--danger); }
 @keyframes upload-spin { to { transform: rotate(360deg); } }
+
+/* Narrow screens stack the Upload dialog's preview under the file list. */
+@media (max-width: 800px) {
+  #upload-form {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .upload-side .upload-list { max-height: 30vh; }
+  .upload-preview.preview-pane { min-height: 0; }
+}

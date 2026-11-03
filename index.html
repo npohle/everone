@@ -115,16 +115,26 @@
 
   <dialog id="upload-dialog" class="modal upload-modal" aria-labelledby="upload-title">
     <form id="upload-form" method="dialog">
-      <h2 id="upload-title">Upload Files</h2>
-      <p class="modal-path">Upload to: <code id="upload-path"></code></p>
-      <input id="upload-input" type="file" multiple hidden />
-      <button id="upload-select" type="button">File Selector</button>
-      <ul id="upload-list" class="upload-list" aria-label="Files to upload"></ul>
-      <div class="modal-actions">
-        <button id="upload-cancel" type="button">Cancel</button>
-        <button id="upload-start" type="submit" class="primary">Upload</button>
-        <button id="upload-close" type="button" class="primary" hidden>Close</button>
+      <div class="upload-side">
+        <h2 id="upload-title">Upload Files</h2>
+        <p class="modal-path">Upload to: <code id="upload-path"></code></p>
+        <input id="upload-input" type="file" multiple hidden />
+        <button id="upload-select" type="button">File Selector</button>
+        <ul id="upload-list" class="upload-list" aria-label="Files to upload"></ul>
+        <div class="modal-actions">
+          <button id="upload-cancel" type="button">Cancel</button>
+          <button id="upload-start" type="submit" class="primary">Upload</button>
+          <button id="upload-close" type="button" class="primary" hidden>Close</button>
+        </div>
       </div>
+      <section class="preview-pane upload-preview" aria-label="Upload preview">
+        <div class="viewer-bar">
+          <span id="upload-preview-title" class="viewer-title">Preview</span>
+        </div>
+        <div id="upload-preview-body" class="viewer-body">
+          <div class="placeholder">Select a file from the list to preview it here.</div>
+        </div>
+      </section>
     </form>
   </dialog>
 

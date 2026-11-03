@@ -1,8 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mergeFiles, uploadNamesValid } from "../../upload-list.js";
+import {
+  mergeFiles,
+  uploadNamesValid,
+  uploadPreviewKind,
+  selectionAfterRemoval,
+} from "../../upload-list.js";
 
-const file = (name, size = 1) => ({ name, size });
+const file = (name, size = 1, type = "") => ({ name, size, type });
 const names = (files) => files.map((f) => f.name);
 
 test("mergeFiles appends new files in order", () => {
@@ -47,4 +52,41 @@ test("uploadNamesValid rejects an empty list", () => {
 test("uploadNamesValid rejects empty or blank names", () => {
   assert.equal(uploadNamesValid(["a.txt", ""]), false);
   assert.equal(uploadNamesValid(["   ", "b.txt"]), false);
+});
+
+test("uploadPreviewKind recognises PDFs by extension or MIME type", () => {
+  assert.equal(uploadPreviewKind(file("scan.pdf")), "pdf");
+  assert.equal(uploadPreviewKind(file("SCAN.PDF")), "pdf");
+  assert.equal(uploadPreviewKind(file("scan", 1, "application/pdf")), "pdf");
+});
+
+test("uploadPreviewKind recognises images and text", () => {
+  assert.equal(uploadPreviewKind(file("photo.JPG")), "image");
+  assert.equal(uploadPreviewKind(file("photo", 1, "image/png")), "image");
+  assert.equal(uploadPreviewKind(file("notes.txt")), "text");
+  assert.equal(uploadPreviewKind(file("data.json")), "text");
+  assert.equal(uploadPreviewKind(file("README", 1, "text/plain")), "text");
+});
+
+test("uploadPreviewKind returns null for anything else", () => {
+  assert.equal(uploadPreviewKind(file("report.docx")), null);
+  assert.equal(uploadPreviewKind(file("archive.zip", 1, "application/zip")), null);
+  assert.equal(uploadPreviewKind(file("noextension")), null);
+});
+
+test("selectionAfterRemoval keeps the selection when another file is removed", () => {
+  const [a, b, c] = [file("a"), file("b"), file("c")];
+  assert.equal(selectionAfterRemoval([a, b, c], b, a), a);
+});
+
+test("selectionAfterRemoval moves to the next file, or the previous one at the end", () => {
+  const [a, b, c] = [file("a"), file("b"), file("c")];
+  assert.equal(selectionAfterRemoval([a, b, c], b, b), c);
+  assert.equal(selectionAfterRemoval([a, b, c], c, c), b);
+});
+
+test("selectionAfterRemoval clears the selection when the last file goes", () => {
+  const a = file("a");
+  assert.equal(selectionAfterRemoval([a], a, a), null);
+  assert.equal(selectionAfterRemoval([], null, null), null);
 });

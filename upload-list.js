@@ -19,3 +19,29 @@ export function mergeFiles(existing, incoming) {
 export function uploadNamesValid(names) {
   return names.length > 0 && names.every((name) => name.trim() !== "");
 }
+
+const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"]);
+const TEXT_EXT = new Set(["txt", "log", "csv", "tsv", "json", "xml", "yml", "yaml", "md", "markdown"]);
+
+// How the Upload dialog's preview pane shows a picked file: "pdf", "image",
+// "text", or null when it can't be previewed. Picked files carry a MIME type
+// guessed by the browser, which may be empty, so the extension counts too.
+export function uploadPreviewKind(file) {
+  const dot = file.name.lastIndexOf(".");
+  const ext = dot >= 0 ? file.name.slice(dot + 1).toLowerCase() : "";
+  const type = file.type || "";
+  if (ext === "pdf" || type === "application/pdf") return "pdf";
+  if (IMAGE_EXT.has(ext) || type.startsWith("image/")) return "image";
+  if (TEXT_EXT.has(ext) || type.startsWith("text/")) return "text";
+  return null;
+}
+
+// The file to preview once `removed` is dropped from `files`: the current
+// selection if that's another file, else the next file, else the previous
+// one, else null.
+export function selectionAfterRemoval(files, removed, selected) {
+  if (selected !== removed) return selected;
+  const i = files.indexOf(removed);
+  if (i < 0) return null;
+  return files[i + 1] ?? files[i - 1] ?? null;
+}
