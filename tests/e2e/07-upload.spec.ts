@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test, expect } from "./fixtures.ts";
@@ -58,6 +58,22 @@ async function pickFiles(page: Page, dialog: Locator, files: string[]) {
   await chooser.setFiles(files);
 }
 
+// Downloads the content of /Documents/<folder>/<name> with the app's own
+// signed-in token.
+async function readFromDocuments(page: Page, folder: string, name: string) {
+  return page.evaluate(async ([folder, name]) => {
+    const { getToken } = await import("./auth.js");
+    const { config } = await import("./config.js");
+    const token = await getToken();
+    const res = await fetch(
+      `${config.graphBase}/me/drive/root:/Documents/${encodeURIComponent(folder)}/${encodeURIComponent(name)}:/content`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) throw new Error(`Download failed: ${res.status} ${await res.text()}`);
+    return res.text();
+  }, [folder, name]);
+}
+
 // Best-effort cleanup of whatever a test left behind under /Documents, using
 // the app's own signed-in token. Graph deletes recursively.
 async function removeFromDocuments(page: Page, name: string) {
@@ -78,7 +94,8 @@ async function removeFromDocuments(page: Page, name: string) {
 test("UPLOAD-001: upload multiple files into a new folder", async ({ page }) => {
   const artefactsDir = process.env.ARTEFACTS_DIR;
   const folderName = randomFolderName();
-  const files = createLocalFiles("file1.txt", "file2.txt", "file3.txt");
+  const files = createLocalFiles("file1.txt", "file2.txt", "file3.txt", "file4.txt");
+  const renamed = "2020-02-02_UPLOADTEST01.txt";
   const listing = page.locator("#listing");
 
   await openDocuments(page);
@@ -114,31 +131,64 @@ test("UPLOAD-001: upload multiple files into a new folder", async ({ page }) => 
     await expect(fileList.getByText("file3.txt", { exact: true })).toHaveCount(1);
     await page.screenshot({ path: `${artefactsDir}/07-02-deduped.png` });
 
-    await dialog.getByRole("button", { name: "Upload", exact: true }).click();
-    // While uploading (or once done) the remove icons are gone.
+    // Each entry gets a name input prefilled with the original file name.
+    await pickFiles(page, dialog, [files["file4.txt"]]);
+    await expect(entries).toHaveCount(3);
+    await expect(dialog.getByLabel("Upload file1.txt as")).toHaveValue("file1.txt");
+    await expect(dialog.getByLabel("Upload file3.txt as")).toHaveValue("file3.txt");
+    const file4Name = dialog.getByLabel("Upload file4.txt as");
+    await expect(file4Name).toHaveValue("file4.txt");
+
+    // An empty name disables the upload.
+    const uploadBtn = dialog.getByRole("button", { name: "Upload", exact: true });
+    await expect(uploadBtn).toBeEnabled();
+    await file4Name.fill("");
+    await expect(uploadBtn).toBeDisabled();
+    await page.screenshot({ path: `${artefactsDir}/07-03-empty-name.png` });
+
+    await file4Name.fill(renamed);
+    await expect(uploadBtn).toBeEnabled();
+    // The original name stays listed next to the input.
+    await expect(fileList.getByText("file4.txt", { exact: true })).toHaveCount(1);
+    await page.screenshot({ path: `${artefactsDir}/07-04-renamed.png` });
+
+    await uploadBtn.click();
+    // While uploading (or once done) the remove icons are gone and the names
+    // can no longer be edited.
     await expect(dialog.getByRole("button", { name: /^Remove / })).toHaveCount(0);
+    await expect(file4Name).toBeDisabled();
 
     const closeBtn = dialog.getByRole("button", { name: "Close" });
     await expect(closeBtn).toBeVisible({ timeout: 30_000 });
     await expect(closeBtn).toBeEnabled();
     await expect(dialog.getByRole("button", { name: "Upload", exact: true })).toHaveCount(0);
-    for (const name of ["file1.txt", "file3.txt"]) {
+    for (const name of ["file1.txt", "file3.txt", "file4.txt"]) {
       const entry = entries.filter({ hasText: name });
       await expect(entry.getByRole("img", { name: "Uploaded" })).toBeVisible();
     }
     await expect(fileList.getByRole("img", { name: "Upload failed" })).toHaveCount(0);
-    await page.screenshot({ path: `${artefactsDir}/07-03-uploaded.png` });
+    await page.screenshot({ path: `${artefactsDir}/07-05-uploaded.png` });
 
     await closeBtn.click();
     await expect(dialog).not.toBeVisible();
     await expect(page.getByText("Loading")).not.toBeVisible();
     await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(folderName);
     const rows = listing.locator(".row:not(.head)");
-    await expect(rows).toHaveCount(2);
+    await expect(rows).toHaveCount(3);
     await expect(listing.getByText("file1.txt", { exact: true })).toBeVisible();
     await expect(listing.getByText("file3.txt", { exact: true })).toBeVisible();
+    // The listing shows the date prefix in its own Reference column.
+    const renamedRow = rows.filter({ has: page.getByText("UPLOADTEST01.txt", { exact: true }) });
+    await expect(renamedRow).toHaveCount(1);
+    await expect(renamedRow.locator(".meta-ref")).toHaveText("2020-02-02");
     await expect(listing.getByText("file2.txt", { exact: true })).toHaveCount(0);
-    await page.screenshot({ path: `${artefactsDir}/07-04-listing.png` });
+    await expect(listing.getByText("file4.txt", { exact: true })).toHaveCount(0);
+    await page.screenshot({ path: `${artefactsDir}/07-06-listing.png` });
+
+    // The file exists under its full new name and carries file4.txt's
+    // original content.
+    expect(await readFromDocuments(page, folderName, renamed))
+      .toBe(readFileSync(files["file4.txt"], "utf8"));
   } finally {
     await removeFromDocuments(page, folderName);
   }

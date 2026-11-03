@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mergeFiles } from "../../upload-list.js";
+import { mergeFiles, uploadNamesValid } from "../../upload-list.js";
 
 const file = (name, size = 1) => ({ name, size });
 const names = (files) => files.map((f) => f.name);
@@ -34,4 +34,17 @@ test("mergeFiles does not mutate its inputs", () => {
 test("mergeFiles accepts array-likes such as a FileList", () => {
   const fileList = { 0: file("a.txt"), 1: file("b.txt"), length: 2 };
   assert.deepEqual(names(mergeFiles([], fileList)), ["a.txt", "b.txt"]);
+});
+
+test("uploadNamesValid accepts a list of non-empty names", () => {
+  assert.equal(uploadNamesValid(["a.txt", "2020-02-02_b.txt"]), true);
+});
+
+test("uploadNamesValid rejects an empty list", () => {
+  assert.equal(uploadNamesValid([]), false);
+});
+
+test("uploadNamesValid rejects empty or blank names", () => {
+  assert.equal(uploadNamesValid(["a.txt", ""]), false);
+  assert.equal(uploadNamesValid(["   ", "b.txt"]), false);
 });

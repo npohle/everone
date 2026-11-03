@@ -115,14 +115,14 @@ export async function deleteEmptyFolder(itemId) {
 const SIMPLE_UPLOAD_MAX = 4 * 1024 * 1024;
 const UPLOAD_CHUNK_SIZE = 320 * 1024 * 32; // 10 MiB
 
-// Uploads a File into parentId (or the drive root when null) under its own
-// name. Uses conflictBehavior "fail" so an existing name surfaces as an error
+// Uploads a File into parentId (or the drive root when null) under `name`,
+// which defaults to the file's own name. Uses conflictBehavior "fail" so an existing name surfaces as an error
 // instead of overwriting or silently renaming.
-export async function uploadFile(parentId, file) {
+export async function uploadFile(parentId, file, name = file.name) {
   const parentPath = parentId
     ? `/me/drive/items/${encodeURIComponent(parentId)}:`
     : `/me/drive/root:`;
-  const itemPath = `${config.graphBase}${parentPath}/${encodeURIComponent(file.name)}:`;
+  const itemPath = `${config.graphBase}${parentPath}/${encodeURIComponent(name)}:`;
 
   if (file.size <= SIMPLE_UPLOAD_MAX) {
     return graphJson(`${itemPath}/content?@microsoft.graph.conflictBehavior=fail`, {
