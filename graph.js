@@ -156,9 +156,13 @@ export async function uploadFile(parentId, file) {
   }
 }
 
-export async function search(query, sort) {
+// Searches the hierarchy below folderId (or the whole drive when null).
+export async function search(query, sort, folderId = null) {
   const q = encodeURIComponent(query);
-  const url = `${config.graphBase}/me/drive/root/search(q='${q}')?$top=${config.pageSize}&$select=${SELECT}${orderByParam(sort)}`;
+  const path = folderId
+    ? `/me/drive/items/${encodeURIComponent(folderId)}`
+    : `/me/drive/root`;
+  const url = `${config.graphBase}${path}/search(q='${q}')?$top=${config.pageSize}&$select=${SELECT}${orderByParam(sort)}`;
   return graphJson(url);
 }
 
