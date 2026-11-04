@@ -6,6 +6,7 @@ import * as viewer from "./viewer.js";
 import * as uploadPreview from "./upload-preview.js";
 import { mergeFiles, uploadNamesValid, selectionAfterRemoval, canSuggestName } from "./upload-list.js";
 import { suggestFileName } from "./extract.js";
+import { icon, hydrateIcons, fileIcon, fileKind } from "./icons.js";
 
 const els = {
   signedOut: document.getElementById("signed-out"),
@@ -27,6 +28,7 @@ const els = {
   search: document.getElementById("search"),
   breadcrumbs: document.getElementById("breadcrumbs"),
   toast: document.getElementById("toast"),
+  toastMessage: document.getElementById("toast-message"),
   newFolderBtn: document.getElementById("new-folder-btn"),
   newFolderDialog: document.getElementById("new-folder-dialog"),
   newFolderForm: document.getElementById("new-folder-form"),
@@ -76,7 +78,7 @@ const state = {
 };
 
 function showToast(msg, ms = 4000) {
-  els.toast.textContent = msg;
+  els.toastMessage.textContent = msg;
   els.toast.hidden = false;
   clearTimeout(showToast._t);
   showToast._t = setTimeout(() => { els.toast.hidden = true; }, ms);
@@ -148,24 +150,6 @@ function displayName(name) {
   return s;
 }
 
-const FOLDER_ICON = "📁";
-function fileIcon(item) {
-  if (item.folder) return FOLDER_ICON;
-  const name = item.name.toLowerCase();
-  const ext = name.includes(".") ? name.split(".").pop() : "";
-  if (["png","jpg","jpeg","gif","webp","bmp","svg","avif"].includes(ext)) return "🖼️";
-  if (["mp4","webm","ogv","mov","m4v","avi","mkv"].includes(ext)) return "🎬";
-  if (["mp3","wav","ogg","m4a","flac","aac"].includes(ext)) return "🎵";
-  if (ext === "pdf") return "📕";
-  if (["doc","docx","odt","rtf"].includes(ext)) return "📝";
-  if (["xls","xlsx","csv","ods"].includes(ext)) return "📊";
-  if (["ppt","pptx","odp"].includes(ext)) return "📽️";
-  if (["zip","rar","7z","tar","gz","bz2","xz"].includes(ext)) return "🗜️";
-  if (["js","ts","py","rb","go","rs","java","c","cpp","cs","html","css","json","xml","sh"].includes(ext)) return "📜";
-  if (["md","markdown","txt","log"].includes(ext)) return "📄";
-  return "📄";
-}
-
 function renderListing() {
   els.listing.replaceChildren();
   // Items arrive pre-sorted from Graph via $orderby; preserve that order so
@@ -190,7 +174,7 @@ function renderListing() {
     li.className = "row" + (item.id === state.selectedId ? " selected" : "");
     li.dataset.id = item.id;
     li.innerHTML = `
-      <span class="icon">${fileIcon(item)}</span>
+      <span class="icon" data-kind="${fileKind(item)}">${fileIcon(item)}</span>
       <span class="name"></span>
       <span class="meta-ref">${parseReferenceDate(item.name) ?? ""}</span>
     `;
@@ -211,7 +195,8 @@ function renderBreadcrumbs() {
     if (i > 0) {
       const sep = document.createElement("span");
       sep.className = "sep";
-      sep.textContent = "›";
+      sep.setAttribute("aria-hidden", "true");
+      sep.innerHTML = icon("chevron-right");
       els.breadcrumbs.appendChild(sep);
     }
     if (i === crumbs.length - 1) {
@@ -323,9 +308,9 @@ function openUploadDialog() {
 }
 
 const UPLOAD_STATUS = {
-  uploading: { cls: "progress", label: "Uploading", text: "" },
-  success: { cls: "success", label: "Uploaded", text: "✓" },
-  failed: { cls: "failed", label: "Upload failed", text: "✗" },
+  uploading: { cls: "progress", label: "Uploading", icon: "loader-circle" },
+  success: { cls: "success", label: "Uploaded", icon: "check" },
+  failed: { cls: "failed", label: "Upload failed", icon: "x" },
 };
 
 function uploadName(file) {
@@ -341,11 +326,25 @@ function renderUploadDialog() {
     li.addEventListener("click", (e) => {
       if (!e.target.closest(".upload-remove")) selectUploadFile(file);
     });
+    // A File Thumbnail style type icon, then the name over its size.
+    const info = document.createElement("span");
+    info.className = "upload-file";
+    const thumb = document.createElement("span");
+    thumb.className = "upload-thumb";
+    thumb.setAttribute("aria-hidden", "true");
+    thumb.innerHTML = fileIcon(file);
+    const text = document.createElement("span");
+    text.className = "upload-file-text";
     const name = document.createElement("span");
     name.className = "upload-name";
     name.textContent = file.name;
     name.title = file.name;
-    li.appendChild(name);
+    const meta = document.createElement("span");
+    meta.className = "upload-meta";
+    meta.textContent = formatBytes(file.size);
+    text.append(name, meta);
+    info.append(thumb, text);
+    li.appendChild(info);
 
     // Updated in place rather than re-rendered, so typing keeps focus.
     const rename = document.createElement("input");
@@ -369,7 +368,8 @@ function renderUploadDialog() {
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "upload-remove";
-      remove.textContent = "✕";
+      Object.assign(remove.dataset, { slot: "button", variant: "ghost", size: "icon-xs" });
+      remove.innerHTML = icon("x");
       remove.setAttribute("aria-label", `Remove ${file.name}`);
       remove.title = "Remove";
       remove.addEventListener("click", () => {
@@ -382,13 +382,13 @@ function renderUploadDialog() {
     } else {
       const result = results.get(file) || { status: "uploading" };
       const s = UPLOAD_STATUS[result.status];
-      const icon = document.createElement("span");
-      icon.className = `upload-status ${s.cls}`;
-      icon.setAttribute("role", "img");
-      icon.setAttribute("aria-label", s.label);
-      icon.title = result.error ? `${s.label}: ${result.error}` : s.label;
-      icon.textContent = s.text;
-      li.appendChild(icon);
+      const status = document.createElement("span");
+      status.className = `upload-status ${s.cls}`;
+      status.setAttribute("role", "img");
+      status.setAttribute("aria-label", s.label);
+      status.title = result.error ? `${s.label}: ${result.error}` : s.label;
+      status.innerHTML = icon(s.icon);
+      li.appendChild(status);
     }
     els.uploadList.appendChild(li);
   }
@@ -445,7 +445,8 @@ function suggestButton(file) {
   const suggest = document.createElement("button");
   suggest.type = "button";
   suggest.className = "upload-suggest";
-  suggest.textContent = "🪄";
+  Object.assign(suggest.dataset, { slot: "button", variant: "ghost", size: "icon-xs" });
+  suggest.innerHTML = icon("wand-sparkles");
   suggest.setAttribute("aria-label", `Suggest a name for ${file.name}`);
   if (!canSuggestName(file)) {
     suggest.disabled = true;
@@ -793,6 +794,7 @@ function wireEvents() {
   });
   els.uploadBtn.addEventListener("click", openUploadDialog);
   els.uploadSelect.addEventListener("click", () => els.uploadInput.click());
+  initUploadDropzone();
   els.uploadInput.addEventListener("change", () => addUploadFiles(els.uploadInput.files));
   els.uploadCancel.addEventListener("click", () => els.uploadDialog.close());
   els.uploadClose.addEventListener("click", () => els.uploadDialog.close());
@@ -821,6 +823,39 @@ function wireEvents() {
   }, 300));
   initListingKeyboard();
   initSplitDivider();
+}
+
+// Files dragged onto the dropzone are added like picked ones. dragenter and
+// dragleave also fire for the dropzone's children, so count them to know
+// when the drag really left.
+function initUploadDropzone() {
+  const zone = els.uploadSelect;
+  let depth = 0;
+  const setDragging = (on) => zone.toggleAttribute("data-dragging", on);
+  zone.addEventListener("dragenter", (e) => {
+    e.preventDefault();
+    if (zone.disabled) return;
+    depth++;
+    setDragging(true);
+  });
+  zone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = zone.disabled ? "none" : "copy";
+  });
+  zone.addEventListener("dragleave", () => {
+    depth = Math.max(0, depth - 1);
+    if (depth === 0) setDragging(false);
+  });
+  zone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    depth = 0;
+    setDragging(false);
+    if (!zone.disabled && e.dataTransfer.files.length > 0) addUploadFiles(e.dataTransfer.files);
+  });
+  // A drop that misses the dropzone must not navigate away to the file.
+  for (const type of ["dragover", "drop"]) {
+    els.uploadDialog.addEventListener(type, (e) => e.preventDefault());
+  }
 }
 
 function initListingKeyboard() {
@@ -913,6 +948,7 @@ function initSplitDivider() {
 }
 
 async function start() {
+  hydrateIcons(document);
   wireEvents();
   // callback/ completes the Cloudflare sign-in on its own page and leaves
   // only a failure, if any, behind; the two sign-ins never share state.

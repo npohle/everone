@@ -24,7 +24,7 @@ async function signOutOfCloudflareOnly(page: Page) {
   await cloudflare.getByRole("button", { name: "Sign out of Cloudflare" }).click();
   await expect(cloudflare.getByRole("button", { name: "Sign in to Cloudflare" })).toBeVisible();
   await expect(onedrive.getByRole("button", { name: "Sign out of OneDrive" })).toBeVisible();
-  await expect(page.getByText("Load more")).toBeVisible();
+  await expect(page.locator("#status")).toHaveText(/^\d+ items?\+?$/);
 }
 
 async function startSignedInToOneDriveOnly(page: Page, screenshot: string) {
