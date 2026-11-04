@@ -28,7 +28,7 @@ test('FOLDER-001: create a new folder inside "Documents"', async ({ page }) => {
   await expect(page.getByText("Loading")).not.toBeVisible();
   const row = listing.locator(".row", { has: page.getByText(folderName, { exact: true }) });
   await expect(row).toBeVisible();
-  await expect(row.locator(".icon")).toHaveText("📁");
+  await expect(row.locator(".icon")).toHaveAttribute("data-kind", "folder");
   await page.screenshot({ path: `${artefactsDir}/05-03-created.png` });
 
   // Clean up so test folders don't pile up in the real account. Runs in the

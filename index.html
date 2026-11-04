@@ -4,81 +4,107 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>EverOne: Browse Microsoft OneDrive</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <!-- Geist / Geist Mono: the typefaces Extend UI ships with. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400&display=swap" />
   <link rel="stylesheet" href="./styles.css" />
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📁</text></svg>" />
   <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"
           crossorigin="anonymous"></script>
 </head>
 <body>
+  <!-- The UI follows Extend UI (https://github.com/extend-hq/ui): its React
+       primitives (Button, Input, Select, Dialog, Card, Badge, Toast, Spinner,
+       File Upload) are recreated as plain markup with data-slot / data-variant
+       / data-size attributes mirroring theirs, styled in styles.css.
+       <span data-icon="…"> placeholders are swapped for icons by icons.js. -->
   <header class="topbar">
     <div class="brand">
-      <span class="logo" aria-hidden="true">☁</span>
+      <span class="logo" aria-hidden="true"><span data-icon="cloud"></span></span>
       <span>EverOne: Browse Microsoft OneDrive</span>
     </div>
     <nav id="breadcrumbs" class="breadcrumbs" aria-label="Breadcrumbs"></nav>
     <div class="topbar-actions">
-      <input id="search" type="search" placeholder="Search OneDrive…" autocomplete="off" />
+      <span class="input-control" data-slot="input-control">
+        <span data-icon="search" class="input-icon"></span>
+        <input id="search" type="search" placeholder="Search OneDrive…" autocomplete="off"
+               aria-label="Search OneDrive" data-slot="input" />
+      </span>
       <div class="auth-group" id="onedrive-auth" role="group" aria-label="OneDrive account">
-        <span class="auth-provider">OneDrive</span>
+        <span class="auth-provider" data-slot="badge" data-variant="outline">OneDrive</span>
         <span id="user" class="user" hidden></span>
-        <button id="auth-btn" type="button" aria-label="Sign in to OneDrive">Sign in</button>
+        <button id="auth-btn" type="button" data-slot="button" data-variant="outline" data-size="sm"
+                aria-label="Sign in to OneDrive">Sign in</button>
       </div>
       <div class="auth-group" id="cloudflare-auth" role="group" aria-label="Cloudflare account">
-        <span class="auth-provider">Cloudflare</span>
+        <span class="auth-provider" data-slot="badge" data-variant="outline">Cloudflare</span>
         <span id="cf-account" class="cf-account" hidden>
           <span id="cf-account-name" class="cf-account-name"></span>
           <span id="cf-account-id" class="cf-account-id"></span>
         </span>
-        <button id="cf-auth-btn" type="button" aria-label="Sign in to Cloudflare">Sign in</button>
+        <button id="cf-auth-btn" type="button" data-slot="button" data-variant="outline" data-size="sm"
+                aria-label="Sign in to Cloudflare">Sign in</button>
       </div>
     </div>
   </header>
 
   <main id="main" class="main">
-    <section id="signed-out" class="signed-out">
-      <h1>Sign in to browse your OneDrive</h1>
-      <p>This is a static, client-only viewer. Your files never pass through any server other than Microsoft Graph.</p>
-      <button id="signin-cta" type="button" class="primary">Sign in with Microsoft</button>
-      <p class="hint" id="config-hint" hidden>
-        First-time setup: edit <code>config.js</code> and set your Azure App Registration <code>clientId</code>.
+    <section id="signed-out" class="signed-out" data-slot="card">
+      <span class="signed-out-icon" aria-hidden="true"><span data-icon="cloud"></span></span>
+      <h1 data-slot="card-title">Sign in to browse your OneDrive</h1>
+      <p data-slot="card-description">This is a static, client-only viewer. Your files never pass through any server other than Microsoft Graph.</p>
+      <button id="signin-cta" type="button" data-slot="button" data-variant="default" data-size="lg">Sign in with Microsoft</button>
+      <p class="hint" id="config-hint" data-slot="alert" data-variant="warning" hidden>
+        <span data-icon="circle-alert"></span>
+        <span>First-time setup: edit <code>config.js</code> and set your Azure App Registration <code>clientId</code>.</span>
       </p>
     </section>
 
     <section id="browser" class="browser" hidden>
       <div class="toolbar">
-        <button id="up-btn" type="button" title="Up one level">↑ Up</button>
-        <button id="new-folder-btn" type="button" title="Create a folder here">New Folder</button>
-        <button id="delete-folder-btn" type="button" title="Delete this folder (only when empty)" disabled>Delete Folder</button>
-        <button id="upload-btn" type="button" title="Upload files into this folder">Upload</button>
-        <select id="sort">
-          <option value="name-desc">Name (Z→A)</option>
-          <option value="name-asc">Name (A→Z)</option>
-          <option value="modified-desc">Modified (newest)</option>
-          <option value="modified-asc">Modified (oldest)</option>
-          <option value="size-desc">Size (largest)</option>
-          <option value="size-asc">Size (smallest)</option>
-        </select>
-        <span id="status" class="status"></span>
+        <button id="up-btn" type="button" data-slot="button" data-variant="outline" data-size="sm"
+                title="Up one level"><span data-icon="arrow-up"></span>Up</button>
+        <button id="new-folder-btn" type="button" data-slot="button" data-variant="outline" data-size="sm"
+                title="Create a folder here"><span data-icon="folder-plus"></span>New Folder</button>
+        <button id="delete-folder-btn" type="button" data-slot="button" data-variant="destructive-outline" data-size="sm"
+                title="Delete this folder (only when empty)" disabled><span data-icon="trash-2"></span>Delete Folder</button>
+        <button id="upload-btn" type="button" data-slot="button" data-variant="default" data-size="sm"
+                title="Upload files into this folder"><span data-icon="upload"></span>Upload</button>
+        <span class="select-control" data-slot="select-trigger">
+          <select id="sort" aria-label="Sort by">
+            <option value="name-desc">Name (Z→A)</option>
+            <option value="name-asc">Name (A→Z)</option>
+            <option value="modified-desc">Modified (newest)</option>
+            <option value="modified-asc">Modified (oldest)</option>
+            <option value="size-desc">Size (largest)</option>
+            <option value="size-asc">Size (smallest)</option>
+          </select>
+          <span data-icon="chevron-down" class="select-icon"></span>
+        </span>
+        <span id="status" class="status" data-slot="badge" data-variant="secondary"></span>
       </div>
       <div class="split">
-        <div class="list-pane">
+        <div class="list-pane" data-slot="card">
           <ul id="listing" class="listing" role="list"></ul>
-          <div id="loading" class="loading" hidden>Loading…</div>
-          <button id="load-more" class="load-more" type="button" hidden>Load more</button>
+          <div id="loading" class="loading" hidden><span data-icon="loader-circle" class="spinner"></span>Loading…</div>
+          <button id="load-more" class="load-more" type="button" data-slot="button" data-variant="outline" data-size="sm" hidden>Load more</button>
         </div>
         <div id="split-divider" class="split-divider" role="separator"
              aria-orientation="vertical" aria-label="Resize list pane" tabindex="0"></div>
-        <div id="viewer" class="preview-pane">
+        <div id="viewer" class="preview-pane" data-slot="card">
           <div class="viewer-bar">
             <span id="viewer-title" class="viewer-title">Preview</span>
-            <button id="viewer-scribe" type="button" class="viewer-scribe"
-                    title="Extract the text content of this PDF with scribe.js" hidden>Scribe</button>
-            <button id="viewer-extract" type="button" class="viewer-scribe"
+            <button id="viewer-scribe" type="button" class="viewer-scribe" data-slot="button" data-variant="outline" data-size="xs"
+                    title="Extract the text content of this PDF with scribe.js" hidden><span data-icon="scan-text"></span>Scribe</button>
+            <button id="viewer-extract" type="button" class="viewer-scribe" data-slot="button" data-variant="outline" data-size="xs"
                     title="Extract sender, creation date and subject from the first page with Cloudflare Workers AI"
-                    hidden disabled>Extract</button>
+                    hidden disabled><span data-icon="sparkles"></span>Extract</button>
             <div class="viewer-actions">
-              <a id="viewer-download" href="#" download hidden>Download</a>
-              <a id="viewer-open" href="#" target="_blank" rel="noopener" hidden>Open in OneDrive</a>
+              <a id="viewer-download" href="#" download data-slot="button" data-variant="ghost" data-size="xs"
+                 hidden><span data-icon="download"></span>Download</a>
+              <a id="viewer-open" href="#" target="_blank" rel="noopener" data-slot="button" data-variant="ghost" data-size="xs"
+                 hidden><span data-icon="external-link"></span>Open in OneDrive</a>
             </div>
           </div>
           <div id="viewer-body" class="viewer-body">
@@ -89,46 +115,70 @@
     </section>
   </main>
 
-  <dialog id="new-folder-dialog" class="modal" aria-labelledby="new-folder-title">
+  <dialog id="new-folder-dialog" class="modal" data-slot="dialog-popup" aria-labelledby="new-folder-title">
     <form id="new-folder-form" method="dialog">
-      <h2 id="new-folder-title">New Folder</h2>
-      <p class="modal-path">Create in: <code id="new-folder-path"></code></p>
-      <label for="new-folder-name">Folder name</label>
-      <input id="new-folder-name" type="text" autocomplete="off" required />
-      <div class="modal-actions">
-        <button id="new-folder-cancel" type="button">Cancel</button>
-        <button id="new-folder-create" type="submit" class="primary">Create</button>
+      <div class="dialog-header" data-slot="dialog-header">
+        <h2 id="new-folder-title" data-slot="dialog-title">New Folder</h2>
+        <p class="modal-path" data-slot="dialog-description">Create in: <code id="new-folder-path"></code></p>
+      </div>
+      <div class="dialog-panel" data-slot="dialog-panel">
+        <label for="new-folder-name" data-slot="label">Folder name</label>
+        <span class="input-control" data-slot="input-control">
+          <input id="new-folder-name" type="text" autocomplete="off" required data-slot="input" />
+        </span>
+      </div>
+      <div class="modal-actions" data-slot="dialog-footer">
+        <button id="new-folder-cancel" type="button" data-slot="button" data-variant="ghost">Cancel</button>
+        <button id="new-folder-create" type="submit" data-slot="button" data-variant="default">Create</button>
       </div>
     </form>
   </dialog>
 
-  <dialog id="delete-folder-dialog" class="modal" aria-labelledby="delete-folder-title">
+  <dialog id="delete-folder-dialog" class="modal" data-slot="dialog-popup" aria-labelledby="delete-folder-title">
     <form id="delete-folder-form" method="dialog">
-      <h2 id="delete-folder-title">Delete Folder</h2>
-      <p class="modal-path">Delete: <code id="delete-folder-path"></code></p>
-      <div class="modal-actions">
-        <button id="delete-folder-cancel" type="button">Cancel</button>
-        <button id="delete-folder-confirm" type="submit" class="danger">Delete</button>
+      <div class="dialog-header" data-slot="dialog-header">
+        <h2 id="delete-folder-title" data-slot="dialog-title">Delete Folder</h2>
+        <p class="modal-path" data-slot="dialog-description">Delete: <code id="delete-folder-path"></code></p>
+      </div>
+      <div class="modal-actions" data-slot="dialog-footer">
+        <button id="delete-folder-cancel" type="button" data-slot="button" data-variant="ghost">Cancel</button>
+        <button id="delete-folder-confirm" type="submit" data-slot="button" data-variant="destructive">Delete</button>
       </div>
     </form>
   </dialog>
 
-  <dialog id="upload-dialog" class="modal upload-modal" aria-labelledby="upload-title">
+  <dialog id="upload-dialog" class="modal upload-modal" data-slot="dialog-popup" aria-labelledby="upload-title">
     <form id="upload-form" method="dialog">
       <div class="upload-side">
-        <h2 id="upload-title">Upload Files</h2>
-        <p class="modal-path">Upload to: <code id="upload-path"></code></p>
-        <input id="upload-input" type="file" multiple hidden />
-        <button id="upload-select" type="button">File Selector</button>
-        <ul id="upload-list" class="upload-list" aria-label="Files to upload"></ul>
-        <p id="upload-message" class="upload-message" role="status"></p>
-        <div class="modal-actions">
-          <button id="upload-cancel" type="button">Cancel</button>
-          <button id="upload-start" type="submit" class="primary">Upload</button>
-          <button id="upload-close" type="button" class="primary" hidden>Close</button>
+        <div class="dialog-header" data-slot="dialog-header">
+          <h2 id="upload-title" data-slot="dialog-title">Upload Files</h2>
+          <p class="modal-path" data-slot="dialog-description">Upload to: <code id="upload-path"></code></p>
+        </div>
+        <div class="dialog-panel upload-panel" data-slot="dialog-panel">
+          <input id="upload-input" type="file" multiple hidden />
+          <!-- Extend UI's File Upload dropzone: click to pick, or drop files. -->
+          <button id="upload-select" type="button" class="dropzone" data-slot="file-upload-dropzone"
+                  aria-labelledby="upload-drop-title" aria-describedby="upload-drop-hint">
+            <span class="dropzone-cluster" aria-hidden="true">
+              <span class="dropzone-card"><span data-icon="file-image"></span></span>
+              <span class="dropzone-card"><span data-icon="file-up"></span></span>
+              <span class="dropzone-card"><span data-icon="file-spreadsheet"></span></span>
+            </span>
+            <span class="dropzone-text">
+              <span id="upload-drop-title" class="dropzone-title">Click to upload or drop files</span>
+              <span id="upload-drop-hint" class="dropzone-hint">Any file type, as many as you like</span>
+            </span>
+            <span class="dropzone-pill" aria-hidden="true">
+              <span data-icon="upload"></span>
+              <span class="dropzone-pill-idle">Browse files</span>
+              <span class="dropzone-pill-dragging">Drop to add</span>
+            </span>
+          </button>
+          <ul id="upload-list" class="upload-list" aria-label="Files to upload"></ul>
+          <p id="upload-message" class="upload-message" role="status"></p>
         </div>
       </div>
-      <section class="preview-pane upload-preview" aria-label="Upload preview">
+      <section class="preview-pane upload-preview" data-slot="card" aria-label="Upload preview">
         <div class="viewer-bar">
           <span id="upload-preview-title" class="viewer-title">Preview</span>
         </div>
@@ -136,36 +186,52 @@
           <div class="placeholder">Select a file from the list to preview it here.</div>
         </div>
       </section>
-    </form>
-  </dialog>
-
-  <dialog id="scribe-dialog" class="modal scribe-modal" aria-labelledby="scribe-title">
-    <form method="dialog">
-      <h2 id="scribe-title">Extracted Text Content</h2>
-      <p class="modal-path">Source: <code id="scribe-source"></code></p>
-      <p id="scribe-status" class="scribe-status" role="status"></p>
-      <textarea id="scribe-text" class="scribe-text" readonly
-                aria-label="Extracted text" spellcheck="false"></textarea>
-      <div class="modal-actions">
-        <button id="scribe-close" type="submit" class="primary">Close</button>
+      <div class="modal-actions" data-slot="dialog-footer">
+        <button id="upload-cancel" type="button" data-slot="button" data-variant="ghost">Cancel</button>
+        <button id="upload-start" type="submit" data-slot="button" data-variant="default">Upload</button>
+        <button id="upload-close" type="button" data-slot="button" data-variant="default" hidden>Close</button>
       </div>
     </form>
   </dialog>
 
-  <dialog id="extract-dialog" class="modal scribe-modal" aria-labelledby="extract-title">
+  <dialog id="scribe-dialog" class="modal scribe-modal" data-slot="dialog-popup" aria-labelledby="scribe-title">
     <form method="dialog">
-      <h2 id="extract-title">Extracted Fields</h2>
-      <p class="modal-path">Source: <code id="extract-source"></code></p>
-      <p id="extract-status" class="scribe-status" role="status"></p>
-      <textarea id="extract-result" class="scribe-text" readonly
-                aria-label="Extraction result" spellcheck="false"></textarea>
-      <div class="modal-actions">
-        <button id="extract-close" type="submit" class="primary">Close</button>
+      <div class="dialog-header" data-slot="dialog-header">
+        <h2 id="scribe-title" data-slot="dialog-title">Extracted Text Content</h2>
+        <p class="modal-path" data-slot="dialog-description">Source: <code id="scribe-source"></code></p>
+      </div>
+      <div class="dialog-panel" data-slot="dialog-panel">
+        <p id="scribe-status" class="scribe-status" role="status"></p>
+        <textarea id="scribe-text" class="scribe-text" readonly data-slot="textarea"
+                  aria-label="Extracted text" spellcheck="false"></textarea>
+      </div>
+      <div class="modal-actions" data-slot="dialog-footer">
+        <button id="scribe-close" type="submit" data-slot="button" data-variant="default">Close</button>
       </div>
     </form>
   </dialog>
 
-  <div id="toast" class="toast" hidden></div>
+  <dialog id="extract-dialog" class="modal scribe-modal" data-slot="dialog-popup" aria-labelledby="extract-title">
+    <form method="dialog">
+      <div class="dialog-header" data-slot="dialog-header">
+        <h2 id="extract-title" data-slot="dialog-title">Extracted Fields</h2>
+        <p class="modal-path" data-slot="dialog-description">Source: <code id="extract-source"></code></p>
+      </div>
+      <div class="dialog-panel" data-slot="dialog-panel">
+        <p id="extract-status" class="scribe-status" role="status"></p>
+        <textarea id="extract-result" class="scribe-text" readonly data-slot="textarea"
+                  aria-label="Extraction result" spellcheck="false"></textarea>
+      </div>
+      <div class="modal-actions" data-slot="dialog-footer">
+        <button id="extract-close" type="submit" data-slot="button" data-variant="default">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" data-slot="toast" role="status" hidden>
+    <span data-icon="circle-alert" class="toast-icon"></span>
+    <div id="toast-message" class="toast-message"></div>
+  </div>
 
   <script type="module" src="./app.js"></script>
 </body>

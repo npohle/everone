@@ -107,13 +107,19 @@ async function openUploadDialog(page: Page) {
   return dialog;
 }
 
-// Clicks "File Selector" and answers the native file picker it opens.
+// Clicks the dropzone and answers the native file picker it opens.
 async function pickFiles(page: Page, dialog: Locator, files: string[]) {
   const chooserPromise = page.waitForEvent("filechooser");
-  await dialog.getByRole("button", { name: "File Selector" }).click();
+  await dropzone(dialog).click();
   const chooser = await chooserPromise;
   expect(chooser.isMultiple()).toBe(true);
   await chooser.setFiles(files);
+}
+
+// The Extend UI style dropzone that opens the file picker or takes dropped
+// files.
+function dropzone(dialog: Locator) {
+  return dialog.getByRole("button", { name: "Click to upload or drop files" });
 }
 
 // Downloads the content of /Documents/<folder>/<name> with the app's own
@@ -443,6 +449,44 @@ test("UPLOAD-005: the magic wand suggests a file name from the PDF's extracted f
   await expect(pdfWand).toBeEnabled();
   await expect(dialog.getByLabel("Upload notes.txt as")).toHaveValue("notes.txt");
   await page.screenshot({ path: `${artefactsDir}/07-41-suggested-name.png` });
+
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+});
+
+test("UPLOAD-006: files dropped onto the dropzone are added to the list", async ({ page }) => {
+  const artefactsDir = process.env.ARTEFACTS_DIR;
+
+  await openDocuments(page);
+  const dialog = await openUploadDialog(page);
+  const zone = dropzone(dialog);
+  await expect(zone).toBeVisible();
+  await page.screenshot({ path: `${artefactsDir}/07-50-dropzone.png` });
+
+  // Playwright can't drag files in from the OS, so build the DataTransfer a
+  // real drop would carry in the page and dispatch the drag events with it.
+  const dataTransfer = await page.evaluateHandle(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(["dropped one\n"], "dropped1.txt", { type: "text/plain" }));
+    dt.items.add(new File(["dropped two\n"], "dropped2.txt", { type: "text/plain" }));
+    return dt;
+  });
+  await zone.dispatchEvent("dragenter", { dataTransfer });
+  await expect(zone).toHaveAttribute("data-dragging", "");
+  await page.screenshot({ path: `${artefactsDir}/07-51-dragging.png` });
+  await zone.dispatchEvent("drop", { dataTransfer });
+  await expect(zone).not.toHaveAttribute("data-dragging", "");
+
+  const fileList = dialog.getByRole("list", { name: "Files to upload" });
+  const entries = fileList.getByRole("listitem");
+  await expect(entries).toHaveCount(2);
+  await expect(fileList.getByText("dropped1.txt", { exact: true })).toHaveCount(1);
+  await expect(fileList.getByText("dropped2.txt", { exact: true })).toHaveCount(1);
+  // The first dropped file is previewed, as with picked files.
+  await expect(entries.nth(0)).toHaveAttribute("aria-current", "true");
+  await expect(dialog.getByRole("region", { name: "Upload preview" }).locator("pre")).toHaveText("dropped one\n");
+  await expect(dialog.getByRole("button", { name: "Upload", exact: true })).toBeEnabled();
+  await page.screenshot({ path: `${artefactsDir}/07-52-dropped.png` });
 
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).not.toBeVisible();

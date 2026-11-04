@@ -50,7 +50,11 @@ setup('authenticate', async ({ page }) => {
     await popup.screenshot({ path: path.join(process.env.ARTEFACTS_DIR!, "00-03-stay.png") });
     await popup.getByRole("button", { name: "No" }).click();
 
-    const loaded = await page.getByText("Load more").waitFor({ timeout: 15_000 }).then(() => true).catch(() => false);
+    // The status badge shows the item count once the root listing loaded.
+    // ("Load more" used to serve here, but it was only ever visible because
+    // a CSS rule overrode its hidden attribute.)
+    const listingLoaded = page.locator("#status").getByText(/^\d+ items?\+?$/);
+    const loaded = await listingLoaded.waitFor({ timeout: 15_000 }).then(() => true).catch(() => false);
     
     if (!loaded) {
         // First-time consent is also asked inside the popup, before it closes itself.
@@ -67,7 +71,7 @@ setup('authenticate', async ({ page }) => {
         console.log('Authentication successful, and the main page is loaded.');
     }
 
-    await page.getByText("Load more").waitFor({ timeout: 15_000 })
+    await listingLoaded.waitFor({ timeout: 15_000 })
     .then(async () => {
         await page.screenshot({ path: path.join(process.env.ARTEFACTS_DIR!, "00-04-browser.png") });
         // Serialize cookies/localStorage (storageState) and MSAL's token cache
