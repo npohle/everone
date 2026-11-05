@@ -144,6 +144,15 @@ first page is rendered with pdf.js and sent to the `@cf/cloudflare/clairic`
 model through `https://extract.rubisco.io/cloudflare/ai/run`. The file runs
 with tracing off so the token never ends up in `trace.zip`.
 
+**The listing** (`#listing`) is extend-ui's File System component, a tree
+whose rows are `treeitem`s in an open shadow root (Playwright locators
+pierce it). `tests/e2e/lib/listing.ts` has the shared locators: rows by
+display name, the date column (rendered from the row decoration's `title`),
+and `openFolder`, which double-clicks — a single click only expands a folder
+in place. `tests/e2e/11-listing.spec.ts` covers the list view itself: name /
+date split, lazy loading of subfolders, and listing every page of a folder
+(by rewriting Graph's `$top` to 2 with `page.route`).
+
 ## Exploring a signed-in session with `playwright-cli`
 
 `tests/explorative/authenticatedBrowserSession.ts` is a small

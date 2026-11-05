@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { test, expect } from "./fixtures.ts";
+import { listingFiles, listingRow, openFolder } from "./lib/listing.ts";
 import type { Page } from "@playwright/test";
 
 // EXTRACT-001 holds a real Cloudflare API token, which ends up in the
@@ -22,12 +23,6 @@ async function signInToCloudflare(page: Page, accessToken: string) {
   }, accessToken);
 }
 
-async function openFolder(page: Page, name: string) {
-  await page.locator("#listing").getByText(name, { exact: true }).click();
-  await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(name);
-  await expect(page.getByText("Loading")).not.toBeVisible();
-}
-
 const extractButton = (page: Page) => page.locator(".viewer-bar").getByRole("button", { name: "Extract" });
 
 test("EXTRACT-001: extract fields from the first page of a previewed PDF", async ({ page }) => {
@@ -45,10 +40,8 @@ test("EXTRACT-001: extract fields from the first page of a previewed PDF", async
   await openFolder(page, "e2e-test-search-01");
   await page.screenshot({ path: `${artefactsDir}/10-01-folder.png` });
 
-  // The first document in the listing (skipping the header row and folders).
-  const firstDocument = page.locator("#listing li.row:not(.head)")
-    .filter({ hasNot: page.locator(".icon", { hasText: "📁" }) })
-    .first();
+  // The first document in the listing (skipping folders).
+  const firstDocument = listingFiles(page).first();
   await firstDocument.click();
   await expect(page.locator("#viewer-body canvas.pdf-page").first()).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${artefactsDir}/10-02-preview.png` });
@@ -105,7 +98,7 @@ test("EXTRACT-002: the Extract button is only enabled for PDF documents", async 
     await openFolder(page, "Documents");
     await openFolder(page, folderName);
 
-    await page.locator("#listing").getByText("notes.txt", { exact: true }).click();
+    await listingRow(page, "notes.txt").click();
     await expect(page.locator("#viewer-title")).toHaveText("notes.txt");
     await expect(page.locator("#viewer-body pre")).toContainText("not a pdf");
     await expect(extractBtn).toBeVisible();

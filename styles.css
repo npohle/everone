@@ -33,12 +33,17 @@ html, body {
   font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
 }
 
-button, input, select {
+/* Element defaults for the page's own controls. They stay out of the
+   listing (extend-ui's File System, styled by vendor/extend-ui/
+   file-system.css) and the menus and dialogs it opens on <body>, which all
+   carry a data-slot attribute: unlayered rules here would beat its Tailwind
+   classes. :where() keeps the exclusion from adding specificity. */
+:where(button, input, select):where(:not(.extend-ui *, [data-slot], [data-slot] *)) {
   font: inherit;
   color: inherit;
 }
 
-button {
+button:where(:not(.extend-ui *, [data-slot], [data-slot] *)) {
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
@@ -46,7 +51,7 @@ button {
   padding: 6px 12px;
   cursor: pointer;
 }
-button:hover { background: var(--row-hover); }
+button:where(:not(.extend-ui *, [data-slot], [data-slot] *)):hover { background: var(--row-hover); }
 button.primary {
   background: var(--accent);
   color: white;
@@ -56,7 +61,7 @@ button.primary {
 }
 button.primary:hover { background: var(--accent-hover); }
 
-input[type="search"] {
+input[type="search"]:where(:not(.extend-ui *, [data-slot], [data-slot] *)) {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -64,11 +69,11 @@ input[type="search"] {
   width: 240px;
 }
 
-a {
+a:where(:not(.extend-ui *, [data-slot], [data-slot] *)) {
   color: var(--accent);
   text-decoration: none;
 }
-a:hover { text-decoration: underline; }
+a:where(:not(.extend-ui *, [data-slot], [data-slot] *)):hover { text-decoration: underline; }
 
 .topbar {
   display: flex;
@@ -209,69 +214,15 @@ a:hover { text-decoration: underline; }
   font-size: 13px;
 }
 
+/* Mount point of the listing (see renderListing() in app.js). */
 .listing {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.row {
-  display: grid;
-  grid-template-columns: 32px 1fr 100px;
-  gap: 12px;
-  align-items: center;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-}
-.row:last-child { border-bottom: none; }
-.row:hover { background: var(--row-hover); }
-.row.head {
-  background: var(--bg);
-  cursor: default;
-  font-weight: 600;
-  color: var(--muted);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.row.head:hover { background: var(--bg); }
-
-.row .icon {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-}
-.row .name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.row .meta-ref {
-  color: var(--muted);
-  font-size: 13px;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 @media (max-width: 640px) {
-  .row { grid-template-columns: 28px 1fr; }
-  .row .meta-ref { display: none; }
   input[type="search"] { width: 140px; }
   .breadcrumbs { display: none; }
-}
-
-.empty {
-  padding: 40px;
-  text-align: center;
-  color: var(--muted);
 }
 
 .loading {
@@ -280,15 +231,10 @@ a:hover { text-decoration: underline; }
   color: var(--muted);
 }
 
-.load-more {
-  display: block;
-  margin: 12px auto;
-}
-
 /* Split layout */
 .split {
   display: grid;
-  grid-template-columns: var(--list-width, 320px) 6px 1fr;
+  grid-template-columns: var(--list-width, 560px) 6px 1fr;
   height: calc(100vh - 130px);
   min-height: 400px;
 }
@@ -314,15 +260,9 @@ body.split-dragging iframe { pointer-events: none; }
 body.split-dragging { cursor: col-resize; }
 
 .list-pane {
-  overflow: auto;
   display: flex;
   flex-direction: column;
-}
-.list-pane .listing { flex: 0 0 auto; }
-
-.row.selected,
-.row.selected:hover {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  min-height: 0;
 }
 
 .preview-pane {
@@ -547,7 +487,7 @@ body.split-dragging { cursor: col-resize; }
   white-space: pre-wrap;
 }
 
-button:disabled {
+button:where(:not(.extend-ui *, [data-slot], [data-slot] *)):disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

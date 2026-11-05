@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test, expect } from "./fixtures.ts";
+import { listingFiles, listingRow, openFolder, rowDate } from "./lib/listing.ts";
 import type { Locator, Page } from "@playwright/test";
 
 // UPLOAD-005 holds a real Cloudflare API token, which ends up in the
@@ -79,9 +80,7 @@ async function signInToCloudflare(page: Page, accessToken: string) {
 async function openDocuments(page: Page) {
   await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
-  await page.locator("#listing").getByText("Documents", { exact: true }).click();
-  await expect(page.locator("#breadcrumbs")).toContainText("Documents");
-  await expect(page.getByText("Loading")).not.toBeVisible();
+  await openFolder(page, "Documents");
 }
 
 async function createFolderViaUi(page: Page, name: string) {
@@ -91,13 +90,7 @@ async function createFolderViaUi(page: Page, name: string) {
   await dialog.getByRole("button", { name: "Create" }).click();
   await expect(dialog).not.toBeVisible();
   await expect(page.getByText("Loading")).not.toBeVisible();
-  await expect(page.locator("#listing").getByText(name, { exact: true })).toBeVisible();
-}
-
-async function openFolder(page: Page, name: string) {
-  await page.locator("#listing").getByText(name, { exact: true }).click();
-  await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(name);
-  await expect(page.getByText("Loading")).not.toBeVisible();
+  await expect(listingRow(page, name)).toBeVisible();
 }
 
 async function openUploadDialog(page: Page) {
@@ -231,16 +224,15 @@ test("UPLOAD-001: upload multiple files into a new folder", async ({ page }) => 
     await expect(dialog).not.toBeVisible();
     await expect(page.getByText("Loading")).not.toBeVisible();
     await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(folderName);
-    const rows = listing.locator(".row:not(.head)");
-    await expect(rows).toHaveCount(3);
-    await expect(listing.getByText("file1.txt", { exact: true })).toBeVisible();
-    await expect(listing.getByText("file3.txt", { exact: true })).toBeVisible();
-    // The listing shows the date prefix in its own Reference column.
-    const renamedRow = rows.filter({ has: page.getByText("UPLOADTEST01.txt", { exact: true }) });
+    await expect(listingFiles(page)).toHaveCount(3);
+    await expect(listingRow(page, "file1.txt")).toBeVisible();
+    await expect(listingRow(page, "file3.txt")).toBeVisible();
+    // The listing splits the date prefix off into its Date Created column.
+    const renamedRow = listingRow(page, "UPLOADTEST01.txt");
     await expect(renamedRow).toHaveCount(1);
-    await expect(renamedRow.locator(".meta-ref")).toHaveText("2020-02-02");
-    await expect(listing.getByText("file2.txt", { exact: true })).toHaveCount(0);
-    await expect(listing.getByText("file4.txt", { exact: true })).toHaveCount(0);
+    await expect(rowDate(renamedRow)).toHaveAttribute("title", "Feb 2, 2020");
+    await expect(listingRow(page, "file2.txt")).toHaveCount(0);
+    await expect(listingRow(page, "file4.txt")).toHaveCount(0);
     await page.screenshot({ path: `${artefactsDir}/07-06-listing.png` });
 
     // The file exists under its full new name and carries file4.txt's
@@ -303,7 +295,7 @@ test("UPLOAD-003: files that already exist are marked as failed, others still up
     await dialog.getByRole("button", { name: "Upload", exact: true }).click();
     await dialog.getByRole("button", { name: "Close" }).click({ timeout: 30_000 });
     await expect(dialog).not.toBeVisible();
-    await expect(listing.getByText("existing.txt", { exact: true })).toBeVisible();
+    await expect(listingRow(page, "existing.txt")).toBeVisible();
 
     dialog = await openUploadDialog(page);
     await pickFiles(page, dialog, [files["existing.txt"], files["fresh.txt"]]);
@@ -319,8 +311,8 @@ test("UPLOAD-003: files that already exist are marked as failed, others still up
     await closeBtn.click();
     await expect(dialog).not.toBeVisible();
     await expect(page.getByText("Loading")).not.toBeVisible();
-    await expect(listing.locator(".row:not(.head)")).toHaveCount(2);
-    await expect(listing.getByText("fresh.txt", { exact: true })).toBeVisible();
+    await expect(listingFiles(page)).toHaveCount(2);
+    await expect(listingRow(page, "fresh.txt")).toBeVisible();
   } finally {
     await removeFromDocuments(page, folderName);
   }

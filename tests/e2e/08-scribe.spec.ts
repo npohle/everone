@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { test, expect } from "./fixtures.ts";
+import { listingRow, openFolder } from "./lib/listing.ts";
 import type { Page } from "@playwright/test";
 
 const SAMPLE_PDF_URL = "https://www.successcontrol.de/wp-content/uploads/2021/03/Lieferschein-Muster-PDF.pdf";
@@ -42,12 +43,6 @@ async function removeFromDocuments(page: Page, path: string) {
   }, path);
 }
 
-async function openFolder(page: Page, name: string) {
-  await page.locator("#listing").getByText(name, { exact: true }).click();
-  await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(name);
-  await expect(page.getByText("Loading")).not.toBeVisible();
-}
-
 test("SCRIBE-001: extract the text of a previewed PDF into a modal dialog", async ({ page }) => {
   // Scribe loads its (vendored) engine on first use, then parses the PDF.
   test.setTimeout(180_000);
@@ -69,7 +64,7 @@ test("SCRIBE-001: extract the text of a previewed PDF into a modal dialog", asyn
     await page.screenshot({ path: `${artefactsDir}/08-00-test-folder.png` });
 
     // No underscore in the name, so the list shows it unchanged.
-    await page.locator("#listing").getByText(SAMPLE_PDF_NAME, { exact: true }).click();
+    await listingRow(page, SAMPLE_PDF_NAME).click();
     await expect(page.locator("#viewer-title")).toHaveText(SAMPLE_PDF_NAME);
     await expect(page.locator("#viewer-body canvas.pdf-page").first()).toBeVisible({ timeout: 30_000 });
     await page.screenshot({ path: `${artefactsDir}/08-01-preview.png` });
@@ -110,7 +105,7 @@ test("SCRIBE-002: the Scribe button is only shown for PDF documents", async ({ p
     await openFolder(page, "Documents");
     await openFolder(page, folderName);
 
-    await page.locator("#listing").getByText("notes.txt", { exact: true }).click();
+    await listingRow(page, "notes.txt").click();
     await expect(page.locator("#viewer-title")).toHaveText("notes.txt");
     await expect(page.locator("#viewer-body pre")).toContainText("not a pdf");
     await expect(scribeBtn).toBeHidden();

@@ -6,6 +6,8 @@ import * as viewer from "./viewer.js";
 import * as uploadPreview from "./upload-preview.js";
 import { mergeFiles, uploadNamesValid, selectionAfterRemoval, canSuggestName } from "./upload-list.js";
 import { suggestFileName } from "./extract.js";
+import { toFileSystemItems } from "./file-system-items.js";
+import { mountFileSystem } from "./vendor/extend-ui/file-system.js";
 
 const els = {
   signedOut: document.getElementById("signed-out"),
@@ -20,10 +22,8 @@ const els = {
   browser: document.getElementById("browser"),
   listing: document.getElementById("listing"),
   loading: document.getElementById("loading"),
-  loadMore: document.getElementById("load-more"),
   status: document.getElementById("status"),
   upBtn: document.getElementById("up-btn"),
-  sort: document.getElementById("sort"),
   search: document.getElementById("search"),
   breadcrumbs: document.getElementById("breadcrumbs"),
   toast: document.getElementById("toast"),
@@ -56,10 +56,10 @@ const els = {
 const state = {
   // Stack of folder items the user navigated through. The last entry is current.
   stack: [],
-  // Current page of items being displayed.
+  // All items of the current folder (or search) being displayed.
   items: [],
-  nextLink: null,
-  sort: "name-desc",
+  // The listing's view; kept when the listing is rebuilt for another folder.
+  view: "list",
   searchQuery: "",
   // Monotonic id; pending requests with stale ids are discarded.
   loadId: 0,
@@ -92,116 +92,66 @@ function errorDump(err) {
   }
 }
 
-function formatBytes(n) {
-  if (n == null) return "";
-  if (n === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
-}
-
-function formatDate(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const now = new Date();
-  const sameYear = d.getFullYear() === now.getFullYear();
-  return d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: sameYear ? undefined : "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-// Extracts a YYYY-MM-DD prefix from a filename and returns it as a string,
-// or null if the prefix is missing or doesn't represent a valid calendar date.
-function parseReferenceDate(name) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(name);
-  if (!m) return null;
-  const [, y, mo, d] = m;
-  const year = +y, month = +mo, day = +d;
-  const dt = new Date(Date.UTC(year, month - 1, day));
-  if (
-    dt.getUTCFullYear() !== year ||
-    dt.getUTCMonth() !== month - 1 ||
-    dt.getUTCDate() !== day
-  ) return null;
-  return `${y}-${mo}-${d}`;
-}
-
-// Display-only: strip "YYYY-MM-DD_" from the start when the prefix is a valid
-// reference date, then drop everything from the first remaining underscore
-// onward (including the extension). The underlying item.name is unchanged so
-// the viewer title, download filename, and Graph requests keep using the
-// canonical name.
-function displayName(name) {
-  let s = name;
-  if (parseReferenceDate(s) && s[10] === "_") {
-    const stripped = s.slice(11);
-    if (stripped.length > 0) s = stripped;
-  }
-  const i = s.indexOf("_");
-  if (i > 0) s = s.slice(0, i);
-  return s;
-}
-
-const FOLDER_ICON = "📁";
-function fileIcon(item) {
-  if (item.folder) return FOLDER_ICON;
-  const name = item.name.toLowerCase();
-  const ext = name.includes(".") ? name.split(".").pop() : "";
-  if (["png","jpg","jpeg","gif","webp","bmp","svg","avif"].includes(ext)) return "🖼️";
-  if (["mp4","webm","ogv","mov","m4v","avi","mkv"].includes(ext)) return "🎬";
-  if (["mp3","wav","ogg","m4a","flac","aac"].includes(ext)) return "🎵";
-  if (ext === "pdf") return "📕";
-  if (["doc","docx","odt","rtf"].includes(ext)) return "📝";
-  if (["xls","xlsx","csv","ods"].includes(ext)) return "📊";
-  if (["ppt","pptx","odp"].includes(ext)) return "📽️";
-  if (["zip","rar","7z","tar","gz","bz2","xz"].includes(ext)) return "🗜️";
-  if (["js","ts","py","rb","go","rs","java","c","cpp","cs","html","css","json","xml","sh"].includes(ext)) return "📜";
-  if (["md","markdown","txt","log"].includes(ext)) return "📄";
-  return "📄";
-}
+// The listing is extend-ui's File System component (see extend-ui/), in its
+// list view: the current folder's (or search's) items, with folders that
+// load their children when they're expanded. Rows show each name split into
+// display name and reference date (file-system-items.js); clicking a file
+// previews it, double-clicking a folder opens it here (breadcrumbs, toolbar).
+let listing = null;
+let listingKey = 0;
 
 function renderListing() {
-  els.listing.replaceChildren();
-  // Items arrive pre-sorted from Graph via $orderby; preserve that order so
-  // pagination is stable as more pages stream in.
-  const sorted = state.items;
-
-  if (sorted.length === 0) {
-    const empty = document.createElement("li");
-    empty.className = "empty";
-    empty.textContent = state.searchQuery ? "No matching files." : "This folder is empty.";
-    els.listing.appendChild(empty);
-    return;
-  }
-
-  const head = document.createElement("li");
-  head.className = "row head";
-  head.innerHTML = `<span></span><span>Name</span><span>Reference</span>`;
-  els.listing.appendChild(head);
-
-  for (const item of sorted) {
-    const li = document.createElement("li");
-    li.className = "row" + (item.id === state.selectedId ? " selected" : "");
-    li.dataset.id = item.id;
-    li.innerHTML = `
-      <span class="icon">${fileIcon(item)}</span>
-      <span class="name"></span>
-      <span class="meta-ref">${parseReferenceDate(item.name) ?? ""}</span>
-    `;
-    li.querySelector(".name").textContent = displayName(item.name);
-    li.addEventListener("click", () => onItemClick(item));
-    li.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onItemClick(item); }
-    });
-    li.tabIndex = 0;
-    els.listing.appendChild(li);
-  }
+  // Manifest path → driveItem, for the component's callbacks. Paths are
+  // only unique within one rendering, so every rendering starts afresh (and
+  // remounts the component, dropping the previous folder's lazy loads).
+  const byPath = new Map();
+  // Paths used so far per folder path, so that names repeated across pages
+  // of one folder still get distinct paths.
+  const taken = new Map();
+  const add = (driveItems, parentPath) => {
+    if (!taken.has(parentPath)) taken.set(parentPath, new Set());
+    const items = toFileSystemItems(driveItems, parentPath, taken.get(parentPath));
+    items.forEach((item, i) => byPath.set(item.path, driveItems[i]));
+    return items;
+  };
+  const current = state.stack[state.stack.length - 1];
+  const props = {
+    key: ++listingKey,
+    items: add(state.items, ""),
+    className: "h-full rounded-lg",
+    title: state.searchQuery ? "Search results" : current ? current.name : "OneDrive",
+    emptyLabel: state.searchQuery ? "No matching files." : "This folder is empty.",
+    defaultView: state.view,
+    onViewChange: (view) => { state.view = view; },
+    dateColumn: "createdAt",
+    onSelectionChange: (entry) => {
+      // Clearing the selection keeps the current preview.
+      if (entry && entry.kind === "file") selectItem(byPath.get(entry.path));
+    },
+    onFileOpen: (file) => selectItem(byPath.get(file.path)),
+    onFolderOpen: (folder) => {
+      // A folder may sit deep in expanded folders: open its whole chain.
+      const chain = [];
+      for (let i = folder.path.indexOf("/"); i !== -1; i = folder.path.indexOf("/", i + 1)) {
+        const item = byPath.get(folder.path.slice(0, i + 1));
+        if (item) chain.push({ id: item.id, name: item.name });
+      }
+      state.stack.push(...chain);
+      loadCurrent();
+    },
+    loadChildren: async ({ path, cursor }) => {
+      const folder = byPath.get(path);
+      try {
+        const page = cursor ? await graph.listNextPage(cursor) : await graph.listChildren(folder.id);
+        return { items: add(page.value || [], path), nextCursor: page["@odata.nextLink"] || null };
+      } catch (err) {
+        showToast(`Failed to load "${folder.name}": ${err.message || err}`);
+        throw err;
+      }
+    },
+  };
+  if (listing) listing.render(props);
+  else listing = mountFileSystem(els.listing, props);
 }
 
 function renderBreadcrumbs() {
@@ -274,8 +224,7 @@ function updateDeleteFolderBtn() {
     state.stack.length === 0 ||
     state.loading ||
     !!state.searchQuery ||
-    state.items.length > 0 ||
-    !!state.nextLink;
+    state.items.length > 0;
 }
 
 function openDeleteFolderDialog() {
@@ -543,21 +492,8 @@ async function startUpload() {
   }
 }
 
-function onItemClick(item) {
-  if (item.folder) {
-    state.stack.push({ id: item.id, name: item.name });
-    loadCurrent();
-  } else {
-    selectItem(item);
-  }
-}
-
 function selectItem(item) {
-  if (state.selectedId === item.id) return;
-  const prev = els.listing.querySelector(".row.selected");
-  if (prev) prev.classList.remove("selected");
-  const next = els.listing.querySelector(`.row[data-id="${CSS.escape(item.id)}"]`);
-  if (next) next.classList.add("selected");
+  if (!item || state.selectedId === item.id) return;
   state.selectedId = item.id;
   viewer.open(item);
 }
@@ -577,24 +513,20 @@ async function loadCurrent() {
   state.loading = true;
   updateDeleteFolderBtn();
   els.loading.hidden = false;
-  els.loadMore.hidden = true;
   setStatus("");
   renderBreadcrumbs();
 
   try {
     const folder = state.stack[state.stack.length - 1];
-    const page = await graph.listChildren(folder ? folder.id : null, state.sort);
+    const items = await listAll(id, graph.listChildren(folder ? folder.id : null));
     if (id !== state.loadId) return;
-    state.items = page.value || [];
-    state.nextLink = page["@odata.nextLink"] || null;
+    state.items = items;
     renderListing();
-    els.loadMore.hidden = !state.nextLink;
-    setStatus(`${state.items.length} item${state.items.length === 1 ? "" : "s"}${state.nextLink ? "+" : ""}`);
+    setStatus(`${state.items.length} item${state.items.length === 1 ? "" : "s"}`);
   } catch (err) {
     if (id !== state.loadId) return;
     showToast(err.message || "Failed to load folder");
     state.items = [];
-    state.nextLink = null;
     renderListing();
   } finally {
     if (id === state.loadId) {
@@ -605,23 +537,17 @@ async function loadCurrent() {
   }
 }
 
-async function loadMore() {
-  if (!state.nextLink) return;
-  const id = state.loadId;
-  els.loadMore.disabled = true;
-  try {
-    const page = await graph.listNextPage(state.nextLink);
-    if (id !== state.loadId) return;
-    state.items = state.items.concat(page.value || []);
-    state.nextLink = page["@odata.nextLink"] || null;
-    renderListing();
-    els.loadMore.hidden = !state.nextLink;
-    setStatus(`${state.items.length} item${state.items.length === 1 ? "" : "s"}${state.nextLink ? "+" : ""}`);
-  } catch (err) {
-    showToast(err.message || "Failed to load more");
-  } finally {
-    els.loadMore.disabled = false;
+// Follows a listing's @odata.nextLink through every page, so the listing
+// shows all of a folder's items. Returns null once load `id` is stale.
+async function listAll(id, firstPage) {
+  let page = await firstPage;
+  let items = page.value || [];
+  while (page["@odata.nextLink"]) {
+    if (id !== state.loadId) return null;
+    page = await graph.listNextPage(page["@odata.nextLink"]);
+    items = items.concat(page.value || []);
   }
+  return items;
 }
 
 async function runSearch(query) {
@@ -632,7 +558,6 @@ async function runSearch(query) {
   updateDeleteFolderBtn();
   viewer.clear();
   els.loading.hidden = false;
-  els.loadMore.hidden = true;
   setStatus("");
   // The search is limited to the folder selected in the explorer (the whole
   // drive at the root).
@@ -643,13 +568,11 @@ async function runSearch(query) {
   }));
 
   try {
-    const page = await graph.search(query, state.sort, folder ? folder.id : null);
+    const items = await listAll(id, graph.search(query, undefined, folder ? folder.id : null));
     if (id !== state.loadId) return;
-    state.items = page.value || [];
-    state.nextLink = page["@odata.nextLink"] || null;
+    state.items = items;
     renderListing();
-    els.loadMore.hidden = !state.nextLink;
-    setStatus(`${state.items.length} match${state.items.length === 1 ? "" : "es"}${state.nextLink ? "+" : ""}`);
+    setStatus(`${state.items.length} match${state.items.length === 1 ? "" : "es"}`);
   } catch (err) {
     if (id !== state.loadId) return;
     showToast(err.message || "Search failed");
@@ -772,13 +695,6 @@ function wireEvents() {
     state.stack.pop();
     loadCurrent();
   });
-  els.sort.addEventListener("change", (e) => {
-    state.sort = e.target.value;
-    // Re-fetch so the new $orderby is applied to the first page and propagates
-    // through the @odata.nextLink for subsequent pages.
-    if (state.searchQuery) runSearch(state.searchQuery);
-    else loadCurrent();
-  });
   els.newFolderBtn.addEventListener("click", openNewFolderDialog);
   els.newFolderCancel.addEventListener("click", () => els.newFolderDialog.close());
   els.newFolderForm.addEventListener("submit", (e) => {
@@ -810,7 +726,6 @@ function wireEvents() {
     uploadPreview.clear();
     if (state.upload.phase === "done") loadCurrent();
   });
-  els.loadMore.addEventListener("click", loadMore);
   els.search.addEventListener("input", debounce((e) => {
     const q = e.target.value.trim();
     if (q.length === 0) {
@@ -819,30 +734,7 @@ function wireEvents() {
       runSearch(q);
     }
   }, 300));
-  initListingKeyboard();
   initSplitDivider();
-}
-
-function initListingKeyboard() {
-  els.listing.addEventListener("keydown", (e) => {
-    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-    const rows = Array.from(els.listing.querySelectorAll(".row:not(.head)"));
-    if (rows.length === 0) return;
-    e.preventDefault();
-    const current = rows.indexOf(document.activeElement);
-    let next;
-    if (current === -1) {
-      next = rows.findIndex((r) => r.classList.contains("selected"));
-      if (next === -1) next = 0;
-    } else {
-      next = current + (e.key === "ArrowDown" ? 1 : -1);
-      next = Math.max(0, Math.min(rows.length - 1, next));
-    }
-    const row = rows[next];
-    row.focus();
-    const item = state.items.find((it) => it.id === row.dataset.id);
-    if (item && !item.folder) selectItem(item);
-  });
 }
 
 function initSplitDivider() {
@@ -861,7 +753,7 @@ function initSplitDivider() {
   };
   const currentWidth = () => {
     const v = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--list-width"), 10);
-    return Number.isFinite(v) ? v : 320;
+    return Number.isFinite(v) ? v : 560;
   };
 
   const saved = parseInt(localStorage.getItem(STORAGE_KEY) || "", 10);
