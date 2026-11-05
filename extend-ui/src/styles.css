@@ -105,4 +105,12 @@
     color: var(--foreground);
     background: var(--background);
   }
+
+  /* shadcn's base rule (`* { @apply border-border outline-ring/50 }`),
+     scoped like the preflight. */
+  @scope (.extend-ui, [data-slot]) {
+    * {
+      @apply border-border outline-ring/50;
+    }
+  }
 }

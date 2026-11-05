@@ -132,6 +132,8 @@ export type FileSystemFolderItem = {
   createdAt?: string
   updatedAt?: string
 }
+// EverOne patch: see FileSystemProps.dateColumn.
+export type FileSystemDateColumn = "createdAt" | "updatedAt"
 export type FileSystemFileItem = {
   kind: "file"
   /** Display/canonical path, e.g. `"invoices/2026/jan.pdf"`. */
@@ -139,6 +141,11 @@ export type FileSystemFileItem = {
   /** Original object key (S3/R2). Defaults to `path`. */
   key?: string
   name?: string
+  /**
+   * EverOne patch: the full file name when `name` is a shortened display
+   * name; the file's type (icon, kind, MIME fallback) is read from it.
+   */
+  originalName?: string
   parentPath?: string
   contentType?: string
   size?: number
@@ -190,6 +197,18 @@ export type FileSystemProps = {
    * other files open their resolved URL in a new tab.
    */
   onFileOpen?: (file: FileSystemFileItem, url: string | null) => void
+  /**
+   * EverOne patch: called on folder open (double-click, Enter), replacing the
+   * built-in navigation into the folder.
+   */
+  onFolderOpen?: (folder: FileSystemFolderItem) => void
+  /**
+   * EverOne patch: the list view's date column — `"updatedAt"` (Date
+   * Modified, the default) or `"createdAt"` (Date Created).
+   */
+  dateColumn?: FileSystemDateColumn
+  /** EverOne patch: shown when the folder has no items. */
+  emptyLabel?: string
   /** Resolve a URL (e.g. presigned) for a file without one. */
   getFileUrl?: (file: FileSystemFileItem) => string | Promise<string>
   /** Lazily fetch children for folders with `hasChildren` and no loaded entries. */
@@ -236,6 +255,11 @@ function pathParent(path: string) {
   const separatorIndex = trimmed.lastIndexOf("/")
   return separatorIndex === -1 ? "" : trimmed.slice(0, separatorIndex + 1)
 }
+// EverOne patch: the name a file's type (icon, kind, MIME fallback) is read
+// from — `originalName` when `name` is a shortened display name.
+function fileTypeName(file: FileSystemFileItem) {
+  return file.originalName ?? file.name ?? pathName(file.path)
+}
 function fileExtension(name: string) {
   const dotIndex = name.lastIndexOf(".")
   return dotIndex === -1 ? "" : name.slice(dotIndex + 1).toLowerCase()
@@ -275,7 +299,7 @@ const FILE_KIND_LABELS: Record<string, string> = {
   zip: "ZIP Archive",
 }
 function fileKindLabel(file: FileEntry) {
-  const byExtension = FILE_KIND_LABELS[fileExtension(file.name)]
+  const byExtension = FILE_KIND_LABELS[fileExtension(fileTypeName(file))]
   if (byExtension) return byExtension
   if (file.contentType?.startsWith("image/")) return "Image"
   return file.contentType ?? "Document"
@@ -361,7 +385,7 @@ const MIME_TYPE_LABELS: Record<string, string> = {
 function mimeTypeForFile(file: FileEntry) {
   return (
     file.contentType ??
-    EXTENSION_MIME_TYPES[fileExtension(file.name)] ??
+    EXTENSION_MIME_TYPES[fileExtension(fileTypeName(file))] ??
     FALLBACK_MIME_TYPE
   )
 }
@@ -423,7 +447,7 @@ function viewerKindForFile(
   ) {
     return "pptx"
   }
-  const name = (file.name ?? file.path).toLowerCase()
+  const name = fileTypeName(file).toLowerCase()
   if (name.endsWith(".pdf")) return "pdf"
   if (name.endsWith(".docx")) return "docx"
   if (name.endsWith(".pptx")) return "pptx"
@@ -464,6 +488,16 @@ function formatTimestamp(value: string | undefined) {
   if (!value) return null
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return null
+  // EverOne patch: a date without a time ("2026-01-04") is just that day;
+  // it parses as UTC midnight, so format it in UTC to keep the day intact.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return date.toLocaleDateString("en-US", {
+      day: "numeric",
+      month: "short",
+      timeZone: "UTC",
+      year: "numeric",
+    })
+  }
   const day = date.toLocaleDateString("en-US", {
     day: "numeric",
     month: "short",
@@ -943,13 +977,16 @@ function FileTypeIcon({
   )
 }
 function FileGenericPreview({ file }: { file: FileEntry }) {
-  const extension = fileExtension(file.name)
+  const extension = fileExtension(fileTypeName(file))
   return (
     <div
       data-file-system-on-light=""
       className="flex size-full flex-col items-center justify-center gap-1.5 bg-white text-neutral-400 dark:bg-neutral-100"
     >
-      <FileTypeIcon fileName={file.name} className="size-1/3 min-h-4 min-w-4" />
+      <FileTypeIcon
+        fileName={fileTypeName(file)}
+        className="size-1/3 min-h-4 min-w-4"
+      />
       {extension ? (
         <span className="text-[min(0.625rem,18cqw)] font-semibold tracking-wide uppercase">
           {extension}
@@ -1160,7 +1197,7 @@ function FileVisual({
   const showPager = pageable && totalPages > 1
   const thumbnail = (
     <FileThumbnail
-      file={{ name: file.name, type: file.contentType ?? "" }}
+      file={{ name: fileTypeName(file), type: file.contentType ?? "" }}
       className={cn("@container", !showPager && className)}
       previewAspectRatio={resolvedAspectRatio}
       previewClassName={cn("bg-white dark:bg-neutral-100", previewClassName)}
@@ -1233,6 +1270,9 @@ export function FileSystem({
   defaultPath = "",
   onSelectionChange,
   onFileOpen,
+  onFolderOpen,
+  dateColumn = "updatedAt",
+  emptyLabel = "This folder is empty",
   getFileUrl,
   loadChildren,
   loadPreviewImageUrl,
@@ -1391,16 +1431,17 @@ export function FileSystem({
       const mime = mimeTypeForFile(file)
       if (!byMime.has(mime)) {
         // The leading-dot check keeps dotfiles (.gitignore) whole.
-        const dotIndex = file.name.lastIndexOf(".")
+        const typeName = fileTypeName(file)
+        const dotIndex = typeName.lastIndexOf(".")
         const extension =
-          dotIndex > 0 ? file.name.slice(dotIndex + 1).toLowerCase() : ""
+          dotIndex > 0 ? typeName.slice(dotIndex + 1).toLowerCase() : ""
         byMime.set(mime, {
           group: fileTypeFilterGroup(mime),
           // A synthesized generic name, so files with branded icons
           // (biome.json, next.config.ts, CLAUDE.md, …) don't lend them to
           // the whole type; extensionless names keep their own icon
           // (Dockerfile, Makefile).
-          iconFileName: extension ? `file.${extension}` : file.name,
+          iconFileName: extension ? `file.${extension}` : typeName,
           label: MIME_TYPE_LABELS[mime] ?? mime,
           mime,
         })
@@ -1774,12 +1815,13 @@ export function FileSystem({
   const openEntry = React.useCallback(
     (entry: FileSystemEntry) => {
       if (entry.kind === "folder") {
-        navigateTo(entry.path)
+        if (onFolderOpen) onFolderOpen(entry)
+        else navigateTo(entry.path)
       } else {
         openFile(entry)
       }
     },
-    [navigateTo, openFile]
+    [navigateTo, onFolderOpen, openFile]
   )
   // Selecting a lazy folder (columns view, keyboard nav) prefetches children.
   const selectAndPrefetchEntry = React.useCallback(
@@ -1816,7 +1858,10 @@ export function FileSystem({
   const viewProps: FileSystemViewProps = {
     attachedStagePaths,
     currentPath,
+    dateColumn,
+    emptyLabel,
     entries: currentEntries,
+    ensureChildren,
     fileFilter,
     getFileUrl,
     index: sortedIndex,
@@ -2040,7 +2085,7 @@ export function FileSystem({
                 ? `No results for “${searchInput.trim()}”`
                 : hasActiveFilters
                   ? "No items match the active filters"
-                  : "This folder is empty"
+                  : emptyLabel
             }
           />
         ) : view === "icons" ? (
@@ -2894,7 +2939,13 @@ function FileSystemDateRangeDialog({
 }
 type FileSystemViewProps = {
   currentPath: string
+  /** EverOne patch: see FileSystemProps.dateColumn. */
+  dateColumn: FileSystemDateColumn
+  /** EverOne patch: see FileSystemProps.emptyLabel. */
+  emptyLabel: string
   entries: FileSystemEntry[]
+  /** EverOne patch: lazily loads a folder's children (see loadChildren). */
+  ensureChildren: (folderPath: string) => void
   fileFilter: ((file: FileEntry) => boolean) | null
   getFileUrl?: (file: FileSystemFileItem) => string | Promise<string>
   index: FileSystemIndex
@@ -3367,8 +3418,12 @@ function FileSystemListColumnHeader({
 }
 function FileSystemListView({
   currentPath,
+  dateColumn,
+  emptyLabel,
+  ensureChildren,
   fileFilter,
   index,
+  loadingFolders,
   onOpen,
   onSelect,
   onSortColumnClick,
@@ -3390,15 +3445,29 @@ function FileSystemListView({
         paths.push(relativePath)
       }
     }
+    // EverOne patch: folders are rows of their own (a trailing slash marks a
+    // directory), so empty folders and lazy ones whose children haven't been
+    // loaded yet show up too. With filters active, a folder stays as visible
+    // as the files inside it.
+    if (!fileFilter) {
+      for (const [path, folder] of index.folders) {
+        if (path.length > currentPath.length && path.startsWith(currentPath)) {
+          paths.push(path.slice(currentPath.length))
+          // A lazy folder gets a placeholder child until its children are
+          // loaded, so it can be expanded (which loads them).
+          if (folder.hasChildren && !index.children.get(path)?.length) {
+            paths.push(`${path.slice(currentPath.length)}${TREE_LOADING_ROW}`)
+          }
+        }
+      }
+    }
     return paths.sort()
   }, [currentPath, fileFilter, index])
   if (relativePaths.length === 0) {
     return (
       <FileSystemEmptyState
         label={
-          fileFilter
-            ? "No items match the active filters"
-            : "This folder is empty"
+          fileFilter ? "No items match the active filters" : emptyLabel
         }
       />
     )
@@ -3418,10 +3487,10 @@ function FileSystemListView({
         />
         <FileSystemListColumnHeader
           className="w-44 justify-start"
-          label="Date Modified"
+          label={dateColumn === "createdAt" ? "Date Created" : "Date Modified"}
           onClick={onSortColumnClick}
           sort={sort}
-          sortKey="updatedAt"
+          sortKey={dateColumn}
         />
         <FileSystemListColumnHeader
           className="w-20 justify-start"
@@ -3437,8 +3506,11 @@ function FileSystemListView({
       <FileSystemPierreTree
         key={currentPath}
         currentPath={currentPath}
+        dateColumn={dateColumn}
+        ensureChildren={ensureChildren}
         hasActiveFilters={fileFilter !== null}
         index={index}
+        loadingFolders={loadingFolders}
         initialSelectedPath={
           selectedPath?.startsWith(currentPath)
             ? selectedPath.slice(currentPath.length).replace(/\/$/, "")
@@ -3454,15 +3526,21 @@ function FileSystemListView({
     </div>
   )
 }
+// EverOne patch: name of the placeholder row inside a lazy folder whose
+// children haven't been loaded yet (see FileSystemListView).
+const TREE_LOADING_ROW = "Loading…"
 // Embedded thumbnail symbols grow the sprite injected into the tree's shadow
 // DOM (data-URL covers can run hundreds of KB each); past this many the
 // remaining files fall back to the built-in file-type icons alone.
 const TREE_THUMBNAIL_SPRITE_LIMIT = 400
 function FileSystemPierreTree({
   currentPath,
+  dateColumn,
+  ensureChildren,
   hasActiveFilters,
   index,
   initialSelectedPath,
+  loadingFolders,
   onOpen,
   onSelect,
   relativePaths,
@@ -3471,9 +3549,12 @@ function FileSystemPierreTree({
   treeExpansionRef,
 }: {
   currentPath: string
+  dateColumn: FileSystemDateColumn
+  ensureChildren: (folderPath: string) => void
   hasActiveFilters: boolean
   index: FileSystemIndex
   initialSelectedPath: string | null
+  loadingFolders: Set<string>
   onOpen: (entry: FileSystemEntry) => void
   onSelect: (entry: FileSystemEntry | null) => void
   relativePaths: string[]
@@ -3564,6 +3645,21 @@ function FileSystemPierreTree({
       byFileName[baseName] = { name: symbolId, viewBox: "0 0 16 16" }
       thumbnailCount += 1
     }
+    // EverOne patch: rows are labelled by their path's last segment, so a
+    // file whose type name (originalName) differs from it gets the icon of
+    // its type name.
+    for (const relativePath of relativePaths) {
+      const file = index.files.get(`${currentPath}${relativePath}`)
+      if (!file) continue
+      const baseName = pathName(file.path).toLowerCase()
+      const typeName = fileTypeName(file)
+      if (byFileName[baseName] || typeName.toLowerCase() === baseName) continue
+      const icon = resolveFileIcon("file-tree-icon-file", typeName)
+      byFileName[baseName] = {
+        name: icon.name,
+        viewBox: icon.viewBox ?? "0 0 16 16",
+      }
+    }
     return {
       byFileName,
       colored: true,
@@ -3577,6 +3673,13 @@ function FileSystemPierreTree({
       spriteSheet: `<svg data-icon-sprite aria-hidden="true" width="0" height="0">${symbols.join("")}</svg>`,
     }
   }, [currentPath, index, relativePaths])
+  // EverOne patch: the tree reads its options once, when it's created; the
+  // callbacks below read these refs, so rows loaded later (lazy folders)
+  // still get their columns and resolve to entries when selected.
+  const latestRef = React.useRef({ dateColumn, index, onSelect })
+  React.useLayoutEffect(() => {
+    latestRef.current = { dateColumn, index, onSelect }
+  })
   const { model } = useFileTree({
     flattenEmptyDirectories: false,
     icons,
@@ -3588,6 +3691,7 @@ function FileSystemPierreTree({
     overscan: 12,
     preparedInput,
     renderRowDecoration: ({ row }) => {
+      const { dateColumn: dateKey, index } = latestRef.current
       const entry =
         row.kind === "file"
           ? index.files.get(`${currentPath}${row.path}`)
@@ -3596,9 +3700,17 @@ function FileSystemPierreTree({
       // The decoration lane renders one <span title>; CSS splits it into
       // aligned Date Modified (::before from title) and Size columns.
       const dateColumn =
-        formatTimestamp(entry.updatedAt ?? entry.createdAt) ?? "—"
+        formatTimestamp(
+          dateKey === "createdAt"
+            ? entry.createdAt
+            : (entry.updatedAt ?? entry.createdAt)
+        ) ?? "—"
       if (entry.kind === "folder") {
-        const childCount = index.children.get(entry.path)?.length
+        // EverOne patch: a folder given explicitly, without hasChildren and
+        // without children, is known to be empty.
+        const childCount =
+          index.children.get(entry.path)?.length ??
+          (entry.hasChildren === false ? 0 : undefined)
         return {
           text:
             childCount === undefined
@@ -3654,6 +3766,7 @@ function FileSystemPierreTree({
       }
     `,
     onSelectionChange: (selectedPaths) => {
+      const { index, onSelect } = latestRef.current
       const relativePath = selectedPaths[0]
       if (!relativePath) {
         onSelect(null)
@@ -3672,6 +3785,23 @@ function FileSystemPierreTree({
   React.useEffect(() => {
     model.setIcons(icons)
   }, [icons, model])
+  // EverOne patch: expanding a lazy folder (on mount too, when restored
+  // expanded) loads its children; the loading row stands in until then.
+  React.useEffect(() => {
+    const loadExpandedLazyFolders = () => {
+      for (const relativePath of relativePaths) {
+        if (!relativePath.endsWith(`/${TREE_LOADING_ROW}`)) continue
+        const folderPath = relativePath.slice(0, -TREE_LOADING_ROW.length)
+        const item =
+          model.getItem(folderPath) ?? model.getItem(folderPath.slice(0, -1))
+        if (item && "isExpanded" in item && item.isExpanded()) {
+          ensureChildren(`${currentPath}${folderPath}`)
+        }
+      }
+    }
+    loadExpandedLazyFolders()
+    return model.subscribe(loadExpandedLazyFolders)
+  }, [currentPath, ensureChildren, model, relativePaths])
   // The folders currently expanded in the mounted model, derived from the
   // given path list (the model knows the rows; the paths name the
   // directories to ask about).
@@ -4249,7 +4379,7 @@ const FileSystemColumn = React.memo(function FileSystemColumn({
                     />
                   ) : (
                     <FileTypeIcon
-                      fileName={entry.name}
+                      fileName={fileTypeName(entry)}
                       className="size-4 shrink-0"
                     />
                   )}
