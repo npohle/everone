@@ -587,9 +587,15 @@ body.split-dragging { cursor: col-resize; }
   max-width: 100%;
 }
 
+/* Small screens stack the preview below the listing and let the page
+   scroll, rather than squeezing both into the viewport: the listing's row is
+   at least 60% of the viewport tall (a sized row, so that the File System's
+   h-full has a height to fill), and the preview keeps a minimum height too. */
 @media (max-width: 800px) {
   .split {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(60vh, auto) auto;
+    row-gap: 0.75rem;
     height: auto;
   }
   .split-divider { display: none; }
