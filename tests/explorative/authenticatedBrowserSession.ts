@@ -144,7 +144,7 @@ program
     const targetRunId = runid ?? latestRunId();
     console.log(`Closing session "${targetRunId}"`);
     await runPlaywrightCli([`-s=${targetRunId}`, "close"]);
-    stopCaddy(`tests/artefacts/${targetRunId}`);
+    await stopCaddy(`tests/artefacts/${targetRunId}`);
   });
 
 program.parseAsync();
