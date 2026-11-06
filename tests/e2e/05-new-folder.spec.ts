@@ -1,18 +1,16 @@
 import { randomBytes } from "node:crypto";
 import { test, expect } from "./fixtures.ts";
+import { listingRow, openFolder } from "./lib/listing.ts";
 
 test('FOLDER-001: create a new folder inside "Documents"', async ({ page }) => {
   const artefactsDir = process.env.ARTEFACTS_DIR;
   const folderName = `e2e-test-${randomBytes(6).toString("hex")}`;
-  const listing = page.locator("#listing");
 
   await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
   await page.screenshot({ path: `${artefactsDir}/05-00-start.png` });
 
-  await listing.getByText("Documents", { exact: true }).click();
-  await expect(page.locator("#breadcrumbs")).toContainText("Documents");
-  await expect(page.getByText("Loading")).not.toBeVisible();
+  await openFolder(page, "Documents");
   await page.screenshot({ path: `${artefactsDir}/05-01-documents.png` });
 
   await page.getByRole("button", { name: "New Folder" }).click();
@@ -26,9 +24,9 @@ test('FOLDER-001: create a new folder inside "Documents"', async ({ page }) => {
 
   await expect(dialog).not.toBeVisible();
   await expect(page.getByText("Loading")).not.toBeVisible();
-  const row = listing.locator(".row", { has: page.getByText(folderName, { exact: true }) });
+  const row = listingRow(page, folderName);
   await expect(row).toBeVisible();
-  await expect(row.locator(".icon")).toHaveText("📁");
+  await expect(row).toHaveAttribute("data-item-type", "folder");
   await page.screenshot({ path: `${artefactsDir}/05-03-created.png` });
 
   // Clean up so test folders don't pile up in the real account. Runs in the
@@ -61,7 +59,7 @@ test("FOLDER-002: cancelling the New Folder dialog closes it without creating an
   await expect(dialog).not.toBeVisible();
   await page.screenshot({ path: `${artefactsDir}/05-10-cancelled.png` });
 
-  await expect(page.locator("#listing").getByText("e2e-test-should-not-exist", { exact: true })).toHaveCount(0);
+  await expect(listingRow(page, "e2e-test-should-not-exist")).toHaveCount(0);
 });
 
 // Graph rejects the name with 409 nameAlreadyExists because the app sends

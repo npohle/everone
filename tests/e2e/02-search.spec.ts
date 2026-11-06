@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { test, expect } from "./fixtures.ts";
+import { listingFiles, openFolder } from "./lib/listing.ts";
 import type { Locator, Page } from "@playwright/test";
 
 // Disabled: OneDrive's search indexing is far too slow for these tests to
@@ -84,12 +85,6 @@ async function openRoot(page: Page) {
   await expect(page.getByText("Loading")).not.toBeVisible();
 }
 
-async function openFolder(page: Page, name: string) {
-  await page.locator("#listing").getByText(name, { exact: true }).click();
-  await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(name);
-  await expect(page.getByText("Loading")).not.toBeVisible();
-}
-
 // Clearing the search box drops back to the current folder's listing.
 async function clearSearch(page: Page) {
   await page.getByPlaceholder("Search OneDrive…").fill("");
@@ -109,7 +104,7 @@ async function search(page: Page, query: string) {
 // Freshly uploaded files take a while to show up in OneDrive's search index,
 // so the search is re-run until `check` passes on the result listing.
 async function searchUntil(page: Page, query: string, timeout: number, check: (results: Locator) => Promise<void>) {
-  const results = page.locator("#listing .row:not(.head)");
+  const results = listingFiles(page);
   await expect(async () => {
     await clearSearch(page);
     await search(page, query);

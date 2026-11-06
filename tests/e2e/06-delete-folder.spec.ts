@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { test, expect } from "./fixtures.ts";
+import { listingRow, openFolder } from "./lib/listing.ts";
 import type { Page } from "@playwright/test";
 
 const randomFolderName = () => `e2e-test-${randomBytes(6).toString("hex")}`;
@@ -7,9 +8,7 @@ const randomFolderName = () => `e2e-test-${randomBytes(6).toString("hex")}`;
 async function openDocuments(page: Page) {
   await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
-  await page.locator("#listing").getByText("Documents", { exact: true }).click();
-  await expect(page.locator("#breadcrumbs")).toContainText("Documents");
-  await expect(page.getByText("Loading")).not.toBeVisible();
+  await openFolder(page, "Documents");
 }
 
 async function createFolderViaUi(page: Page, name: string) {
@@ -19,13 +18,7 @@ async function createFolderViaUi(page: Page, name: string) {
   await dialog.getByRole("button", { name: "Create" }).click();
   await expect(dialog).not.toBeVisible();
   await expect(page.getByText("Loading")).not.toBeVisible();
-  await expect(page.locator("#listing").getByText(name, { exact: true })).toBeVisible();
-}
-
-async function openFolder(page: Page, name: string) {
-  await page.locator("#listing").getByText(name, { exact: true }).click();
-  await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(name);
-  await expect(page.getByText("Loading")).not.toBeVisible();
+  await expect(listingRow(page, name)).toBeVisible();
 }
 
 // Best-effort cleanup of whatever a test left behind under /Documents, using
@@ -82,7 +75,7 @@ test("DELETE-001: only empty folders can be deleted, and deleting returns to the
     // Back in the (now empty, refreshed) parent folder.
     await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(parentName);
     await expect(page.getByText("Loading")).not.toBeVisible();
-    await expect(listing.getByText(childName, { exact: true })).toHaveCount(0);
+    await expect(listingRow(page, childName)).toHaveCount(0);
     await expect(listing).toContainText("This folder is empty.");
     await page.screenshot({ path: `${artefactsDir}/06-04-child-deleted.png` });
 
@@ -95,7 +88,7 @@ test("DELETE-001: only empty folders can be deleted, and deleting returns to the
 
     await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText("Documents");
     await expect(page.getByText("Loading")).not.toBeVisible();
-    await expect(listing.getByText(parentName, { exact: true })).toHaveCount(0);
+    await expect(listingRow(page, parentName)).toHaveCount(0);
     await page.screenshot({ path: `${artefactsDir}/06-05-parent-deleted.png` });
   } finally {
     await removeFromDocuments(page, parentName);
@@ -124,7 +117,7 @@ test("DELETE-002: cancelling the Delete Folder dialog keeps the folder", async (
     await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(folderName);
     await page.locator("#breadcrumbs").getByText("Documents", { exact: true }).click();
     await expect(page.getByText("Loading")).not.toBeVisible();
-    await expect(page.locator("#listing").getByText(folderName, { exact: true })).toBeVisible();
+    await expect(listingRow(page, folderName)).toBeVisible();
   } finally {
     await removeFromDocuments(page, folderName);
   }
@@ -137,7 +130,7 @@ test("DELETE-003: the Delete Folder button is visible but disabled at the root",
 
   await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
-  await expect(page.locator("#listing").getByText("Documents", { exact: true })).toBeVisible();
+  await expect(listingRow(page, "Documents")).toBeVisible();
   await expect(deleteBtn).toBeVisible();
   await expect(deleteBtn).toBeDisabled();
 });

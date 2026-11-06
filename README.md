@@ -18,4 +18,9 @@ installed, tested and deployed without the SPA's dependencies:
 npm test --prefix functions   # or, from the root: npm run test:functions
 ```
 
+The SPA's file listing is extend-ui's File System component, prebuilt into
+`vendor/extend-ui/` from [`extend-ui/`](extend-ui/README.md) (the only part
+of the SPA with a build step; rebuild with `npm run build:extend-ui` after
+changing it).
+
 The SPA's tests are described in [tests/README.md](tests/README.md).

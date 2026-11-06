@@ -28,3 +28,11 @@ npm run test:unit
 
 `tests/unit/scribe-text.test.js` checks the vendored version matches and that
 every relative module, worker and asset the vendored code references exists.
+
+## extend-ui
+
+`extend-ui/file-system.js` and `extend-ui/file-system.css` are a build of
+the [extend-ui](https://github.com/extend-hq/ui) File System component (MIT),
+bundled with React, Radix UI, cmdk, lucide-react and `@pierre/trees`. They
+are generated: see [`../extend-ui/README.md`](../extend-ui/README.md) for the
+source, the patches applied to it and how to rebuild.

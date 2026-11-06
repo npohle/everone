@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>EverOne: Browse Microsoft OneDrive</title>
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./vendor/extend-ui/file-system.css" />
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📁</text></svg>" />
   <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"
           crossorigin="anonymous"></script>
@@ -50,21 +51,12 @@
         <button id="new-folder-btn" type="button" title="Create a folder here">New Folder</button>
         <button id="delete-folder-btn" type="button" title="Delete this folder (only when empty)" disabled>Delete Folder</button>
         <button id="upload-btn" type="button" title="Upload files into this folder">Upload</button>
-        <select id="sort">
-          <option value="name-desc">Name (Z→A)</option>
-          <option value="name-asc">Name (A→Z)</option>
-          <option value="modified-desc">Modified (newest)</option>
-          <option value="modified-asc">Modified (oldest)</option>
-          <option value="size-desc">Size (largest)</option>
-          <option value="size-asc">Size (smallest)</option>
-        </select>
         <span id="status" class="status"></span>
       </div>
       <div class="split">
         <div class="list-pane">
-          <ul id="listing" class="listing" role="list"></ul>
           <div id="loading" class="loading" hidden>Loading…</div>
-          <button id="load-more" class="load-more" type="button" hidden>Load more</button>
+          <div id="listing" class="listing"></div>
         </div>
         <div id="split-divider" class="split-divider" role="separator"
              aria-orientation="vertical" aria-label="Resize list pane" tabindex="0"></div>
