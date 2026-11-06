@@ -317,7 +317,7 @@ function renderUploadDialog() {
 
       const remove = document.createElement("button");
       remove.type = "button";
-      remove.className = "upload-remove";
+      remove.className = "upload-remove ghost icon";
       remove.textContent = "✕";
       remove.setAttribute("aria-label", `Remove ${file.name}`);
       remove.title = "Remove";
@@ -393,7 +393,7 @@ function addUploadFiles(fileList) {
 function suggestButton(file) {
   const suggest = document.createElement("button");
   suggest.type = "button";
-  suggest.className = "upload-suggest";
+  suggest.className = "upload-suggest ghost icon";
   suggest.textContent = "🪄";
   suggest.setAttribute("aria-label", `Suggest a name for ${file.name}`);
   if (!canSuggestName(file)) {

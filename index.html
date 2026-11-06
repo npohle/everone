@@ -22,7 +22,7 @@
       <div class="auth-group" id="onedrive-auth" role="group" aria-label="OneDrive account">
         <span class="auth-provider">OneDrive</span>
         <span id="user" class="user" hidden></span>
-        <button id="auth-btn" type="button" aria-label="Sign in to OneDrive">Sign in</button>
+        <button id="auth-btn" type="button" class="sm" aria-label="Sign in to OneDrive">Sign in</button>
       </div>
       <div class="auth-group" id="cloudflare-auth" role="group" aria-label="Cloudflare account">
         <span class="auth-provider">Cloudflare</span>
@@ -30,7 +30,7 @@
           <span id="cf-account-name" class="cf-account-name"></span>
           <span id="cf-account-id" class="cf-account-id"></span>
         </span>
-        <button id="cf-auth-btn" type="button" aria-label="Sign in to Cloudflare">Sign in</button>
+        <button id="cf-auth-btn" type="button" class="sm" aria-label="Sign in to Cloudflare">Sign in</button>
       </div>
     </div>
   </header>
@@ -63,14 +63,14 @@
         <div id="viewer" class="preview-pane">
           <div class="viewer-bar">
             <span id="viewer-title" class="viewer-title">Preview</span>
-            <button id="viewer-scribe" type="button" class="viewer-scribe"
+            <button id="viewer-scribe" type="button" class="viewer-scribe sm"
                     title="Extract the text content of this PDF with scribe.js" hidden>Scribe</button>
-            <button id="viewer-extract" type="button" class="viewer-scribe"
+            <button id="viewer-extract" type="button" class="viewer-scribe sm"
                     title="Extract sender, creation date and subject from the first page with Cloudflare Workers AI"
                     hidden disabled>Extract</button>
             <div class="viewer-actions">
-              <a id="viewer-download" href="#" download hidden>Download</a>
-              <a id="viewer-open" href="#" target="_blank" rel="noopener" hidden>Open in OneDrive</a>
+              <a id="viewer-download" class="button sm" href="#" download hidden>Download</a>
+              <a id="viewer-open" class="button sm" href="#" target="_blank" rel="noopener" hidden>Open in OneDrive</a>
             </div>
           </div>
           <div id="viewer-body" class="viewer-body">

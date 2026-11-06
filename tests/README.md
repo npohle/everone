@@ -153,6 +153,15 @@ in place. `tests/e2e/11-listing.spec.ts` covers the list view itself: name /
 date split, lazy loading of subfolders, and listing every page of a folder
 (by rewriting Graph's `$top` to 2 with `page.route`).
 
+**The look and feel** (`tests/e2e/12-look-and-feel.spec.ts`) checks that
+the page's own controls (`styles.css`) look like extend-ui's: for each
+button, input and dialog it renders an element with the matching extend-ui
+classes (Button variant and size, Input, DialogContent, DialogTitle, copied
+from `extend-ui/src/components/ui/` into `tests/e2e/lib/extend-ui.ts`) in an
+`.extend-ui` scope, where `vendor/extend-ui/file-system.css` styles it, and
+compares the two elements' computed styles, in the light and the dark color
+scheme.
+
 ## Exploring a signed-in session with `playwright-cli`
 
 `tests/explorative/authenticatedBrowserSession.ts` is a small
