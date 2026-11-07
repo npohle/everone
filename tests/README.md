@@ -56,8 +56,15 @@ and stops once at the very end:
   browsers are launched with a `--host-resolver-rules` mapping pointing the
   hostname at 127.0.0.1.
 * Caddy is spawned detached (its own process group, stdio discarded) and its
-  pid is written to `.caddy-server-state.json` in the run's artefacts
-  directory, since `globalTeardown` has to find it again to stop it.
+  pid, port and admin socket are written to `.caddy-server-state.json` in the
+  run's artefacts directory, since `globalTeardown` has to find it again to
+  stop it.
+* Each instance gets its own admin API on a unix socket in the OS temp dir,
+  and `stopCaddy` shuts it down via `POST /stop` on that socket (falling back
+  to a signal), then waits until its port is free — throwing if it isn't.
+  Signalling the detached pid alone fails with `EACCES`/`EPERM` in sandboxed
+  environments, which used to leave every run's Caddy running and holding
+  its port until the candidate port list ran out.
 * `startCaddy`/`stopCaddy` are shared with
   `tests/explorative/authenticatedBrowserSession.ts` (see below), which
   starts its own separate, independent Caddy instance the same way.
