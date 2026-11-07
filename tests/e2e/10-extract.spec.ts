@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { test, expect } from "./fixtures.ts";
-import { listingFiles, listingRow, openFolder } from "./lib/listing.ts";
+import { filesInFolder, listingRow, selectFolder } from "./lib/listing.ts";
 import type { Page } from "@playwright/test";
 
 // EXTRACT-001 holds a real Cloudflare API token, which ends up in the
@@ -36,12 +36,12 @@ test("EXTRACT-001: extract fields from the first page of a previewed PDF", async
   await expect(page.getByText("Loading")).not.toBeVisible();
   await page.screenshot({ path: `${artefactsDir}/10-00-start.png` });
 
-  await openFolder(page, "Documents");
-  await openFolder(page, "e2e-test-search-01");
+  await selectFolder(page, "Documents");
+  await selectFolder(page, "e2e-test-search-01");
   await page.screenshot({ path: `${artefactsDir}/10-01-folder.png` });
 
   // The first document in the listing (skipping folders).
-  const firstDocument = listingFiles(page).first();
+  const firstDocument = (await filesInFolder(page, "e2e-test-search-01")).first();
   await firstDocument.click();
   await expect(page.locator("#viewer-body canvas.pdf-page").first()).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${artefactsDir}/10-02-preview.png` });
@@ -95,8 +95,8 @@ test("EXTRACT-002: the Extract button is only enabled for PDF documents", async 
     await graphCall(`${encodeURIComponent(folderName)}/notes.txt:/content`, {
       method: "PUT", body: "not a pdf\n", contentType: "text/plain",
     });
-    await openFolder(page, "Documents");
-    await openFolder(page, folderName);
+    await selectFolder(page, "Documents");
+    await selectFolder(page, folderName);
 
     await listingRow(page, "notes.txt").click();
     await expect(page.locator("#viewer-title")).toHaveText("notes.txt");

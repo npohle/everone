@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { test, expect } from "./fixtures.ts";
-import { listingFiles, openFolder } from "./lib/listing.ts";
+import { listingFiles, listingRow, selectFolder } from "./lib/listing.ts";
 import type { Locator, Page } from "@playwright/test";
 
 // Disabled: OneDrive's search indexing is far too slow for these tests to
@@ -85,7 +85,7 @@ async function openRoot(page: Page) {
   await expect(page.getByText("Loading")).not.toBeVisible();
 }
 
-// Clearing the search box drops back to the current folder's listing.
+// Clearing the search box drops back to the drive's listing.
 async function clearSearch(page: Page) {
   await page.getByPlaceholder("Search OneDrive…").fill("");
   await expect(page.locator("#status")).toHaveText(/^\d+ items?\+?$/);
@@ -103,10 +103,19 @@ async function search(page: Page, query: string) {
 
 // Freshly uploaded files take a while to show up in OneDrive's search index,
 // so the search is re-run until `check` passes on the result listing.
-async function searchUntil(page: Page, query: string, timeout: number, check: (results: Locator) => Promise<void>) {
+// Clearing the search lists the drive anew; `prepare` runs after that (e.g.
+// to select the folder to search in).
+async function searchUntil(
+  page: Page,
+  query: string,
+  timeout: number,
+  check: (results: Locator) => Promise<void>,
+  prepare: () => Promise<void> = async () => {},
+) {
   const results = listingFiles(page);
   await expect(async () => {
     await clearSearch(page);
+    await prepare();
     await search(page, query);
     await check(results);
   }).toPass({ timeout, intervals: [10_000] });
@@ -142,20 +151,19 @@ test('SEARCH-002: search for "Travelstar" is limited to the selected folder', as
       await page.screenshot({ path: `${artefactsDir}/02-10-not-indexed.png` });
       test.skip(true, "OneDrive hasn't indexed the uploaded PDFs for search yet");
     }
-    await expect(page.locator("#breadcrumbs")).toHaveText("Search in /: “Travelstar”");
+    await expect(page.locator("#listing")).toContainText("Search results in /");
     await page.screenshot({ path: `${artefactsDir}/02-10-root-results.png` });
 
     await clearSearch(page);
     await expect(page.getByPlaceholder("Search OneDrive…")).toHaveValue("");
 
     // Selected folder: only its own copy of the PDF is found.
-    await openFolder(page, folderNames[0]);
     await searchUntil(page, "Travelstar", 60_000, async (results) => {
       await expect(page.locator("#status")).toHaveText("1 match");
       await expect(results).toHaveCount(1);
       await expect(results).toContainText(SAMPLE_PDF_NAME);
-    });
-    await expect(page.locator("#breadcrumbs")).toHaveText(`Search in /${folderNames[0]}: “Travelstar”`);
+    }, () => selectFolder(page, folderNames[0]));
+    await expect(page.locator("#listing")).toContainText(`Search results in /${folderNames[0]}`);
     await page.screenshot({ path: `${artefactsDir}/02-11-folder-results.png` });
   } finally {
     for (const name of folderNames) {
@@ -177,20 +185,20 @@ test("SEARCH-003: search requests are scoped to the selected folder", async ({ p
 
     let request = await search(page, "Travelstar");
     expect(request.url()).toContain("/me/drive/root/search(q='Travelstar')");
-    await expect(page.locator("#breadcrumbs")).toHaveText("Search in /: “Travelstar”");
+    await expect(page.locator("#listing")).toContainText("Search results in /");
     await page.screenshot({ path: `${artefactsDir}/02-20-root-search.png` });
 
     await clearSearch(page);
-    await openFolder(page, folderName);
+    await selectFolder(page, folderName);
     request = await search(page, "Travelstar");
     expect(request.url()).toContain(`/me/drive/items/${encodeURIComponent(folderId)}/search(q='Travelstar')`);
-    await expect(page.locator("#breadcrumbs")).toHaveText(`Search in /${folderName}: “Travelstar”`);
+    await expect(page.locator("#listing")).toContainText(`Search results in /${folderName}`);
     await expect(page.locator("#listing")).toContainText("No matching files.");
     await page.screenshot({ path: `${artefactsDir}/02-21-folder-search.png` });
 
-    // Clearing the search returns to the selected folder, not the root.
+    // Clearing the search returns to the drive's listing.
     await clearSearch(page);
-    await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(folderName);
+    await expect(listingRow(page, folderName)).toBeVisible();
   } finally {
     await removeFromRoot(page, folderName);
   }

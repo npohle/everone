@@ -179,9 +179,33 @@ export type FileSystemLoadChildrenResult = {
   items: FileSystemItem[]
   nextCursor?: string | null
 }
+/**
+ * EverOne patch: lets the host page drive the component after the user
+ * changed a folder's children (see FileSystemProps.controllerRef).
+ */
+export type FileSystemController = {
+  /**
+   * Fetches a folder's children anew (every page, through `loadChildren`)
+   * and opens the folder in the list view. They replace the children loaded
+   * before, and everything loaded below those, once all pages have arrived;
+   * expanded subfolders load their children again. The root's children are
+   * `items`: re-render with new ones instead. Rejects when `loadChildren`
+   * does, keeping the old children.
+   */
+  reloadFolder(path: string): Promise<void>
+  /**
+   * Selects the entry at `path` — opening the folders above it in the list
+   * view — or clears the selection (`null`), and calls `onSelectionChange`
+   * like a selection by the user does.
+   */
+  select(path: string | null): void
+}
 export type FileSystemProps = {
   /** Flat manifest. Folders are optional; missing prefixes are inferred from file paths. */
   items: FileSystemItem[]
+  /** EverOne patch: see FileSystemController. */
+  controllerRef?: React.Ref<FileSystemController>
+
   className?: string
   /** Label for the root folder. */
   title?: string
@@ -1262,6 +1286,7 @@ const VIEW_OPTIONS: Array<{
 ]
 export function FileSystem({
   items,
+  controllerRef,
   className,
   title = "Files",
   defaultView = "icons",
@@ -1855,6 +1880,61 @@ export function FileSystem({
   // (view switches, navigation) so returning to the list view — or to a
   // previously visited folder — restores the same disclosure state.
   const treeExpansionRef = React.useRef(new Map<string, readonly string[]>())
+  // EverOne patch: the mounted list view tree's model, for the controller.
+  const treeModelRef = React.useRef<TreeModelHandle | null>(null)
+  const latestIndexRef = React.useRef(index)
+  React.useLayoutEffect(() => {
+    latestIndexRef.current = index
+  })
+  React.useImperativeHandle(
+    controllerRef,
+    () => ({
+      reloadFolder: async (folderPath) => {
+        const path = normalizeFolderPath(folderPath)
+        if (!path || !loadChildren) return
+        // Opening it must not make ensureChildren() load it on the side.
+        requestedFoldersRef.current.add(path)
+        setLoadingFolders((previous) => new Set(previous).add(path))
+        treeModelRef.current?.expandFolder(path)
+        try {
+          const children: FileSystemItem[] = []
+          let cursor: string | null = null
+          do {
+            const result = await loadChildren({ cursor, path })
+            children.push(...result.items)
+            cursor = result.nextCursor ?? null
+          } while (cursor)
+          const isBelow = (itemPath: string) =>
+            itemPath !== path && itemPath.startsWith(path)
+          for (const requested of requestedFoldersRef.current) {
+            if (isBelow(requested)) requestedFoldersRef.current.delete(requested)
+          }
+          setLoadedItems((previous) => [
+            ...previous.filter((item) => !isBelow(item.path)),
+            ...children,
+          ])
+        } finally {
+          setLoadingFolders((previous) => {
+            const next = new Set(previous)
+            next.delete(path)
+            return next
+          })
+        }
+      },
+      select: (path) => {
+        const index = latestIndexRef.current
+        const entry =
+          path === null
+            ? null
+            : (index.files.get(path) ??
+              index.folders.get(normalizeFolderPath(path)) ??
+              null)
+        treeModelRef.current?.select(entry)
+        selectAndPrefetchEntry(entry)
+      },
+    }),
+    [loadChildren, selectAndPrefetchEntry]
+  )
   const viewProps: FileSystemViewProps = {
     attachedStagePaths,
     currentPath,
@@ -1879,6 +1959,7 @@ export function FileSystem({
     selectedPath,
     sort,
     treeExpansionRef,
+    treeModelRef,
   }
   const openedFileName = openedFile
     ? (openedFile.file.name ?? openedFile.file.path)
@@ -2972,6 +3053,14 @@ type FileSystemViewProps = {
   sort: FileSystemSortState
   /** Expanded tree folders per folder path, surviving view switches. */
   treeExpansionRef: React.RefObject<Map<string, readonly string[]>>
+  /** EverOne patch: the mounted list view tree, for the controller. */
+  treeModelRef: React.RefObject<TreeModelHandle | null>
+}
+// EverOne patch: what the controller (see FileSystemController) does to the
+// list view's tree, by absolute path.
+type TreeModelHandle = {
+  expandFolder: (path: string) => void
+  select: (entry: FileSystemEntry | null) => void
 }
 // Resolves a display URL for a file: its own `url`, else via `getFileUrl`.
 // Keyed by path/url (not object identity) so manifest churn — e.g. thumbnails
@@ -3431,6 +3520,7 @@ function FileSystemListView({
   selectedPath,
   sort,
   treeExpansionRef,
+  treeModelRef,
 }: FileSystemViewProps) {
   // Filters narrow the path list handed to the tree; the search query stays
   // out of it so the tree's own search session (with match highlighting)
@@ -3522,6 +3612,7 @@ function FileSystemListView({
         searchQuery={searchQuery}
         sort={sort}
         treeExpansionRef={treeExpansionRef}
+        treeModelRef={treeModelRef}
       />
     </div>
   )
@@ -3547,6 +3638,7 @@ function FileSystemPierreTree({
   searchQuery,
   sort,
   treeExpansionRef,
+  treeModelRef,
 }: {
   currentPath: string
   dateColumn: FileSystemDateColumn
@@ -3561,6 +3653,7 @@ function FileSystemPierreTree({
   searchQuery: string
   sort: FileSystemSortState
   treeExpansionRef: React.RefObject<Map<string, readonly string[]>>
+  treeModelRef: React.RefObject<TreeModelHandle | null>
 }) {
   // The tree's comparator receives whole paths, not siblings, so it walks
   // the shared segments and applies the active sort at the first level the
@@ -3933,6 +4026,42 @@ function FileSystemPierreTree({
       item.select()
     })
   }, [model])
+  // EverOne patch: the controller's handle on this tree (absolute paths in,
+  // relative ones on the model).
+  React.useLayoutEffect(() => {
+    const directoriesUpTo = (path: string) => {
+      const directories: string[] = []
+      for (let i = path.indexOf("/"); i !== -1; i = path.indexOf("/", i + 1)) {
+        directories.push(path.slice(0, i))
+      }
+      return directories
+    }
+    const handle: TreeModelHandle = {
+      expandFolder: (path) => {
+        if (!path.startsWith(currentPath)) return
+        expandDirectories(directoriesUpTo(path.slice(currentPath.length)))
+      },
+      select: (entry) => {
+        for (const selectedPath of model.getSelectedPaths()) {
+          model.getItem(selectedPath)?.deselect()
+        }
+        if (!entry || !entry.path.startsWith(currentPath)) return
+        const relativePath = entry.path.slice(currentPath.length)
+        expandDirectories(directoriesUpTo(pathParent(relativePath)))
+        const item =
+          model.getItem(relativePath) ??
+          model.getItem(relativePath.replace(/\/$/, ""))
+        if (!item) return
+        item.select()
+        item.focus()
+        model.scrollToPath(item.getPath())
+      },
+    }
+    treeModelRef.current = handle
+    return () => {
+      if (treeModelRef.current === handle) treeModelRef.current = null
+    }
+  }, [currentPath, expandDirectories, model, treeModelRef])
   // Rows live in the tree's shadow DOM; composedPath surfaces the row
   // element behind a pointer or keyboard event so it can resolve to a
   // manifest entry.

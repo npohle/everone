@@ -6,11 +6,13 @@ import { createRoot } from "react-dom/client"
 
 import {
   FileSystem,
+  type FileSystemController,
   type FileSystemProps,
 } from "@/components/extend/file-system"
 import "./styles.css"
 
 export type {
+  FileSystemController,
   FileSystemFileItem,
   FileSystemFolderItem,
   FileSystemItem,
@@ -35,7 +37,7 @@ export type FileSystemMount = {
   /** Re-renders with new props; pass a new `key` to start from scratch. */
   render(props: FileSystemProps & { key?: React.Key }): void
   unmount(): void
-}
+} & FileSystemController
 
 export function mountFileSystem(
   container: HTMLElement,
@@ -47,8 +49,17 @@ export function mountFileSystem(
   }
   container.classList.add("extend-ui")
   const root = createRoot(container)
+  // The controller of whichever component the latest render mounted.
+  const controller: { current: FileSystemController | null } = {
+    current: null,
+  }
   const render = ({ key, ...rest }: FileSystemProps & { key?: React.Key }) =>
-    root.render(<FileSystem key={key} {...rest} />)
+    root.render(<FileSystem key={key} {...rest} controllerRef={controller} />)
   render(props)
-  return { render, unmount: () => root.unmount() }
+  return {
+    render,
+    unmount: () => root.unmount(),
+    reloadFolder: async (path) => controller.current?.reloadFolder(path),
+    select: (path) => controller.current?.select(path),
+  }
 }
