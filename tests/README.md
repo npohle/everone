@@ -151,6 +151,11 @@ first page is rendered with pdf.js and sent to the `@cf/cloudflare/clairic`
 model through `https://extract.rubisco.io/cloudflare/ai/run`. The file runs
 with tracing off so the token never ends up in `trace.zip`.
 
+**The header** (`tests/e2e/03-header.spec.ts`) is a single line, at
+desktop and phone width: the search box on the left, the sign-in icons on
+the right, with no app title or icon. There's no line with the item count
+between it and the listing either.
+
 **The listing** (`#listing`) is extend-ui's File System component, a tree
 whose rows are `treeitem`s in an open shadow root (Playwright locators
 pierce it). `tests/e2e/lib/listing.ts` has the shared locators: rows by

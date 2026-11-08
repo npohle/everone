@@ -188,7 +188,7 @@ test("LISTING-003: all of a folder's items are listed, across every page", async
 
     await expect(await filesInFolder(page, folderName)).toHaveCount(names.length);
     for (const name of names) await expect(listingRow(page, name)).toBeVisible();
-    await expect(page.locator("#status")).toHaveText("5 items");
+    await expect(await rowsInFolder(page, folderName)).toHaveCount(names.length);
     expect(requests.filter((req) => req.url().includes("skiptoken")).length).toBeGreaterThanOrEqual(2);
     await page.screenshot({ path: `${artefactsDir}/11-20-all-pages.png` });
   } finally {

@@ -20,7 +20,6 @@ const els = {
   browser: document.getElementById("browser"),
   listing: document.getElementById("listing"),
   loading: document.getElementById("loading"),
-  status: document.getElementById("status"),
   search: document.getElementById("search"),
   toast: document.getElementById("toast"),
   newFolderDialog: document.getElementById("new-folder-dialog"),
@@ -197,7 +196,6 @@ function updateFolderActions() {
     if (listing) listing.render(props);
     else listing = mountFileSystem(els.listing, props);
   }
-  updateStatus();
 }
 
 function folderActions() {
@@ -232,22 +230,6 @@ function folderActions() {
 
 function canDeleteFolder(folder) {
   return !!folder && folderItemCount(folder) === 0;
-}
-
-// The selected folder's number of items, else the listing's.
-function updateStatus() {
-  if (state.loading) {
-    setStatus("");
-  } else if (state.searchQuery) {
-    setStatus(`${state.items.length} match${state.items.length === 1 ? "" : "es"}`);
-  } else {
-    const n = state.folder ? folderItemCount(state.folder) : listingData.manifest.length;
-    setStatus(`${n} item${n === 1 ? "" : "s"}`);
-  }
-}
-
-function setStatus(text) {
-  els.status.textContent = text;
 }
 
 // The OneDrive path of the selected folder.

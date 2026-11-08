@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test, expect } from "./fixtures.ts";
-import { filesInFolder, listingRow, rowDate, selectFolder } from "./lib/listing.ts";
+import { filesInFolder, listingRow, rowDate, rowsInFolder, selectFolder } from "./lib/listing.ts";
 import type { Locator, Page } from "@playwright/test";
 
 // UPLOAD-005 holds a real Cloudflare API token, which ends up in the
@@ -154,7 +154,7 @@ test("UPLOAD-001: upload multiple files into a new folder", async ({ page }) => 
   try {
     await createFolderViaUi(page, folderName);
     await selectFolder(page, folderName);
-    await expect(page.locator("#status")).toHaveText("0 items");
+    await expect(await rowsInFolder(page, folderName)).toHaveCount(0);
 
     const dialog = await openUploadDialog(page);
     await expect(dialog).toContainText(`/Documents/${folderName}`);
@@ -224,7 +224,7 @@ test("UPLOAD-001: upload multiple files into a new folder", async ({ page }) => 
     await expect(page.getByText("Loading")).not.toBeVisible();
     // The folder is listed anew, and stays selected.
     await expect(listingRow(page, folderName)).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator("#status")).toHaveText("3 items");
+    await expect(await rowsInFolder(page, folderName)).toHaveCount(3);
     await expect(await filesInFolder(page, folderName)).toHaveCount(3);
     await expect(listingRow(page, "file1.txt")).toBeVisible();
     await expect(listingRow(page, "file3.txt")).toBeVisible();
@@ -268,7 +268,7 @@ test("UPLOAD-002: cancelling the Upload dialog uploads nothing", async ({ page }
     await expect(page.getByText("Loading")).not.toBeVisible();
     await selectFolder(page, "Documents");
     await selectFolder(page, folderName);
-    await expect(page.locator("#status")).toHaveText("0 items");
+    await expect(await rowsInFolder(page, folderName)).toHaveCount(0);
 
     // Re-opening starts from an empty list.
     const reopened = await openUploadDialog(page);

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { test, expect } from "./fixtures.ts";
-import { listingRow, selectFolder } from "./lib/listing.ts";
+import { listingRow, rowsInFolder, selectFolder } from "./lib/listing.ts";
 import type { Page } from "@playwright/test";
 
 const randomFolderName = () => `e2e-test-${randomBytes(6).toString("hex")}`;
@@ -43,7 +43,6 @@ test("DELETE-001: only empty folders can be deleted, and deleting selects the pa
   const artefactsDir = process.env.ARTEFACTS_DIR;
   const parentName = randomFolderName();
   const childName = randomFolderName();
-  const status = page.locator("#status");
   const deleteBtn = page.getByRole("button", { name: "Delete Folder" });
   const dialog = page.getByRole("dialog", { name: "Delete Folder" });
 
@@ -63,7 +62,7 @@ test("DELETE-001: only empty folders can be deleted, and deleting selects the pa
 
     // The child is empty, so it can be deleted.
     await selectFolder(page, childName);
-    await expect(status).toHaveText("0 items");
+    await expect(await rowsInFolder(page, childName)).toHaveCount(0);
     await expect(deleteBtn).toBeEnabled();
     await deleteBtn.click();
     await expect(dialog).toBeVisible();
@@ -76,7 +75,7 @@ test("DELETE-001: only empty folders can be deleted, and deleting selects the pa
     await expect(listingRow(page, parentName)).toHaveAttribute("aria-selected", "true");
     await expect(page.getByText("Loading")).not.toBeVisible();
     await expect(listingRow(page, childName)).toHaveCount(0);
-    await expect(status).toHaveText("0 items");
+    await expect(await rowsInFolder(page, parentName)).toHaveCount(0);
     await page.screenshot({ path: `${artefactsDir}/06-04-child-deleted.png` });
 
     // With the child gone the parent is empty and can be deleted too.
