@@ -106,3 +106,118 @@ export function drivePath(path, byPath) {
   const prefix = colon === -1 ? "" : decodeURIComponent(above.slice(colon + 1));
   return `${prefix}/${items.map((item) => item.name).join("/")}`;
 }
+
+// Search results: OneDrive's search finds items anywhere in the drive (on
+// personal drives even when asked to search a folder only), each with a
+// parentReference to the folder it is in. The listing shows them in their
+// folders, from the drive's root down.
+
+// The folder a parentReference path ("/drive/root:/Documents/M%C3%BCller")
+// names, decoded ("/Documents/Müller"); null when there is none.
+function referencedPath(parentReference) {
+  const path = parentReference?.path;
+  const colon = path ? path.indexOf(":") : -1;
+  if (colon === -1) return null;
+  const rest = path.slice(colon + 1);
+  try {
+    return decodeURIComponent(rest);
+  } catch {
+    return rest;
+  }
+}
+
+// Whether `driveItem` may sit somewhere below `folder` (a driveItem; null for
+// the whole drive), going by the paths OneDrive gives. True when either path
+// is missing: then only the folders above the item can tell (see
+// searchResultItems).
+export function mayBeInFolder(driveItem, folder) {
+  if (!folder) return true;
+  const itemPath = referencedPath(driveItem.parentReference);
+  const above = referencedPath(folder.parentReference);
+  if (itemPath === null || above === null) return true;
+  const folderPath = `${above}/${folder.name}`;
+  return itemPath === folderPath || itemPath.startsWith(`${folderPath}/`);
+}
+
+// The id of the folder `driveItem` is in; null for an item at the drive's
+// root (known by its path) and for the root itself (which has no parent).
+function parentId(driveItem) {
+  if (driveItem.parentReference?.path === "/drive/root:") return null;
+  return driveItem.parentReference?.id ?? null;
+}
+
+// Collects the folders above the given driveItems, up to the drive's root,
+// as folder id → driveItem. Folders found in `known` (id → driveItem) are
+// taken from there, the others fetched with `getItem(id)`, a level at a time.
+// The root itself only ends up in there when the paths don't tell an item
+// at the root.
+export async function foldersAbove(driveItems, getItem, known = new Map()) {
+  const folders = new Map();
+  let ids = new Set(driveItems.map(parentId).filter(Boolean));
+  while (ids.size) {
+    const missing = [...ids].filter((id) => !known.has(id));
+    const fetched = await Promise.all(missing.map((id) => getItem(id)));
+    const level = [...ids].filter((id) => known.has(id)).map((id) => known.get(id)).concat(fetched);
+    ids = new Set();
+    for (const folder of level) {
+      folders.set(folder.id, folder);
+      const above = parentId(folder);
+      if (above && !folders.has(above)) ids.add(above);
+    }
+  }
+  return folders;
+}
+
+// Maps search results to the listing's manifest: the files found (not the
+// folders: a folder only shows when it holds a file found), in the folders
+// above them (`folders`, see foldersAbove), from the drive's root down. With
+// `folderId`, only the files below that folder are kept. Folders hold just
+// what was found, so none of them is lazy. Returns the manifest items plus
+// manifest path → driveItem.
+//
+// Files whose folders aren't all known are left out.
+export function searchResultItems(driveItems, folders, folderId = null) {
+  const manifest = [];
+  const byPath = new Map();
+  const taken = new Map();
+  const add = (driveItem, parentPath) => {
+    if (!taken.has(parentPath)) taken.set(parentPath, new Set());
+    const [item] = toFileSystemItems([driveItem], parentPath, taken.get(parentPath));
+    delete item.hasChildren;
+    manifest.push(item);
+    byPath.set(item.path, driveItem);
+    return item.path;
+  };
+  // The ids of the folders above an item, nearest first; null when one of
+  // them is unknown.
+  const idsAbove = (driveItem) => {
+    const ids = [];
+    for (let id = parentId(driveItem); id; id = parentId(folders.get(id))) {
+      if (!folders.has(id)) return null;
+      ids.push(id);
+    }
+    return ids;
+  };
+  // Folder id → its manifest path ("" for the root), adding it (and the
+  // folders above it) on first use.
+  const paths = new Map();
+  const folderPath = (id) => {
+    if (!paths.has(id)) {
+      const folder = folders.get(id);
+      const above = parentId(folder);
+      // The root itself, when it was fetched, isn't shown.
+      let path = "";
+      if (above) path = add(folder, folderPath(above));
+      else if (folder.parentReference?.id) path = add(folder, "");
+      paths.set(id, path);
+    }
+    return paths.get(id);
+  };
+  for (const driveItem of driveItems) {
+    if (driveItem.folder) continue;
+    const ids = idsAbove(driveItem);
+    if (!ids || (folderId && !ids.includes(folderId))) continue;
+    add(driveItem, ids.length ? folderPath(ids[0]) : "");
+  }
+  return { manifest, byPath };
+}
