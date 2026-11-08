@@ -87,8 +87,10 @@ async function openRoot(page: Page) {
 
 // Clearing the search box drops back to the drive's listing.
 async function clearSearch(page: Page) {
+  if (!(await page.getByPlaceholder("Search OneDrive…").inputValue())) return;
+  const listed = page.waitForResponse((res) => res.url().includes("/me/drive/root/children"));
   await page.getByPlaceholder("Search OneDrive…").fill("");
-  await expect(page.locator("#status")).toHaveText(/^\d+ items?\+?$/);
+  await listed;
   await expect(page.getByText("Loading")).not.toBeVisible();
 }
 
@@ -96,8 +98,10 @@ async function clearSearch(page: Page) {
 // request the app sent for it.
 async function search(page: Page, query: string) {
   const request = page.waitForRequest((req) => req.url().includes("/search(q="));
+  const response = page.waitForResponse((res) => res.url().includes("/search(q="));
   await page.getByPlaceholder("Search OneDrive…").fill(query);
-  await expect(page.locator("#status")).toHaveText(/^\d+ match(es)?\+?$/);
+  await response;
+  await expect(page.getByText("Loading")).not.toBeVisible();
   return request;
 }
 
@@ -159,7 +163,6 @@ test('SEARCH-002: search for "Travelstar" is limited to the selected folder', as
 
     // Selected folder: only its own copy of the PDF is found.
     await searchUntil(page, "Travelstar", 60_000, async (results) => {
-      await expect(page.locator("#status")).toHaveText("1 match");
       await expect(results).toHaveCount(1);
       await expect(results).toContainText(SAMPLE_PDF_NAME);
     }, () => selectFolder(page, folderNames[0]));

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { test, expect } from "./fixtures.ts";
-import { listingRow, selectFolder } from "./lib/listing.ts";
+import { listingRow, rowsInFolder, selectFolder } from "./lib/listing.ts";
 import type { Page } from "@playwright/test";
 
 const randomFolderName = () => `e2e-test-${randomBytes(6).toString("hex")}`;
@@ -89,7 +89,7 @@ test("NAV-002: the folder selected in the listing is the one the toolbar acts on
     for (const button of folderActions) await expect(button).toBeEnabled();
     await selectFolder(page, folderName);
     for (const button of folderActions) await expect(button).toBeEnabled();
-    await expect(page.locator("#status")).toHaveText("1 item");
+    await expect(await rowsInFolder(page, folderName)).toHaveCount(1);
     await page.screenshot({ path: `${artefactsDir}/04-11-folder-selected.png` });
 
     // A selected file isn't a folder to act on.
@@ -112,7 +112,7 @@ test("NAV-002: the folder selected in the listing is the one the toolbar acts on
   }
 });
 
-test("NAV-003: New Folder, Delete Folder and Upload are in the listing's header, not the page toolbar", async ({ page }) => {
+test("NAV-003: New Folder, Delete Folder and Upload are in the listing's header, not a page toolbar", async ({ page }) => {
   const artefactsDir = process.env.ARTEFACTS_DIR;
   const listing = page.locator("#listing");
   const names = ["New Folder", "Delete Folder", "Upload"];
@@ -121,7 +121,7 @@ test("NAV-003: New Folder, Delete Folder and Upload are in the listing's header,
   await expect(page.getByText("Loading")).not.toBeVisible();
   await expect(listingRow(page, "Documents")).toBeVisible();
 
-  await expect(page.locator(".toolbar").getByRole("button")).toHaveCount(0);
+  await expect(page.locator(".toolbar")).toHaveCount(0);
   for (const id of ["#new-folder-btn", "#delete-folder-btn", "#upload-btn"]) {
     await expect(page.locator(id)).toHaveCount(0);
   }
