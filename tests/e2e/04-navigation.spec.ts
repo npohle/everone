@@ -36,21 +36,35 @@ async function removeFromDocuments(page: Page, folder: string) {
   }, folder);
 }
 
-test("NAV-001: an \"Up\" button is present", async ({ page }) => {
+test("NAV-001: no Up button, and no navigation, view switcher or title in the listing", async ({ page }) => {
   const artefactsDir = process.env.ARTEFACTS_DIR;
 
   await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
+  const listing = page.locator("#listing");
+  await expect(listingRow(page, "Documents")).toBeVisible();
   await page.screenshot({ path: `${artefactsDir}/04-00-signed-in.png` });
 
-  await expect(page.getByRole("button", { name: "↑ Up", exact: true })).toBeVisible();
+  await expect(page.locator("#up-btn")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /\bUp\b/ })).toHaveCount(0);
+
+  // The listing's header keeps sort, filter and search only.
+  await expect(listing.getByRole("combobox", { name: "Sort by" })).toBeVisible();
+  await expect(listing.getByRole("button", { name: "Filter" })).toBeVisible();
+  for (const name of ["Back", "Forward"]) {
+    await expect(listing.getByRole("button", { name, exact: true })).toHaveCount(0);
+  }
+  // The view switcher: tabs at full width, a select when narrow.
+  await expect(listing.getByRole("tab")).toHaveCount(0);
+  await expect(listing.getByRole("combobox", { name: "View", exact: true })).toHaveCount(0);
+  // The current folder's title ("OneDrive" at the root).
+  await expect(listing.getByText("OneDrive", { exact: true })).toHaveCount(0);
 });
 
 test("NAV-002: the folder selected in the listing is the one the toolbar acts on", async ({ page }) => {
   const artefactsDir = process.env.ARTEFACTS_DIR;
   const folderName = randomFolderName();
   const toolbar = {
-    up: page.getByRole("button", { name: "↑ Up", exact: true }),
     newFolder: page.getByRole("button", { name: "New Folder" }),
     upload: page.getByRole("button", { name: "Upload", exact: true }),
   };
@@ -68,11 +82,11 @@ test("NAV-002: the folder selected in the listing is the one the toolbar acts on
 
     // Nothing selected yet, so there is no folder to act on.
     await expect(listingRow(page, "Documents")).toBeVisible();
-    for (const button of [toolbar.up, ...folderActions]) await expect(button).toBeDisabled();
+    for (const button of folderActions) await expect(button).toBeDisabled();
     await page.screenshot({ path: `${artefactsDir}/04-10-nothing-selected.png` });
 
     await selectFolder(page, "Documents");
-    for (const button of [toolbar.up, ...folderActions]) await expect(button).toBeEnabled();
+    for (const button of folderActions) await expect(button).toBeEnabled();
     await selectFolder(page, folderName);
     for (const button of folderActions) await expect(button).toBeEnabled();
     await expect(page.locator("#status")).toHaveText("1 item");
@@ -84,20 +98,7 @@ test("NAV-002: the folder selected in the listing is the one the toolbar acts on
     await expect(notes).toHaveAttribute("aria-selected", "true");
     await expect(page.locator("#viewer-title")).toHaveText("notes.txt");
     for (const button of folderActions) await expect(button).toBeDisabled();
-    await expect(toolbar.up).toBeEnabled();
     await page.screenshot({ path: `${artefactsDir}/04-12-file-selected.png` });
-
-    // Up selects the folder above the selected item, keeping the preview.
-    await toolbar.up.click();
-    await expect(listingRow(page, folderName)).toHaveAttribute("aria-selected", "true");
-    for (const button of folderActions) await expect(button).toBeEnabled();
-    await expect(page.locator("#viewer-title")).toHaveText("notes.txt");
-    await toolbar.up.click();
-    await expect(listingRow(page, "Documents")).toHaveAttribute("aria-selected", "true");
-    // Above a top-level folder there's only the root: nothing is selected.
-    await toolbar.up.click();
-    await expect(listingRow(page, "Documents")).toHaveAttribute("aria-selected", "false");
-    for (const button of [toolbar.up, ...folderActions]) await expect(button).toBeDisabled();
 
     // Double-clicking a folder doesn't make it the listing's root.
     await listingRow(page, folderName).dblclick();

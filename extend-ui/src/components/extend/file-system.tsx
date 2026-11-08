@@ -56,9 +56,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FileThumbnail } from "@/components/extend/file-thumbnail"
-import { ChevronDown, ChevronUp, Calendar, FileArchiveIcon, GalleryThumbnails, LayoutGrid, Columns3, Columns3Icon, ChevronLeft, ArrowRight, X, Search, ArrowUpDown, Check, Filter, LoaderCircle } from "lucide-react"
+import { ChevronDown, ChevronUp, Calendar, FileArchiveIcon, ChevronLeft, ArrowRight, X, Search, ArrowUpDown, Check, Filter, LoaderCircle } from "lucide-react"
 
 function ArrowDown01Glyph(props: InlineRegistryIconProps) {
   return (
@@ -78,26 +77,6 @@ function Calendar03Glyph(props: InlineRegistryIconProps) {
 function File01Glyph(props: InlineRegistryIconProps) {
   return (
     <FileArchiveIcon {...props} />
-  )
-}
-function GalleryThumbnailsGlyph(props: InlineRegistryIconProps) {
-  return (
-    <GalleryThumbnails {...props} />
-  )
-}
-function GridViewGlyph(props: InlineRegistryIconProps) {
-  return (
-    <LayoutGrid {...props} />
-  )
-}
-function LayoutThreeColumnGlyph(props: InlineRegistryIconProps) {
-  return (
-    <Columns3 {...props} />
-  )
-}
-function LeftToRightListBulletGlyph(props: InlineRegistryIconProps) {
-  return (
-    <Columns3Icon {...props} />
   )
 }
 const LazyPDFViewer = React.lazy(() =>
@@ -207,11 +186,12 @@ export type FileSystemProps = {
   controllerRef?: React.Ref<FileSystemController>
 
   className?: string
-  /** Label for the root folder. */
-  title?: string
+  /**
+   * EverOne patch: there's no view switcher (nor Back / Forward buttons or
+   * folder title) in the header, so the view is only ever set by the host.
+   */
   defaultView?: FileSystemView
   view?: FileSystemView
-  onViewChange?: (view: FileSystemView) => void
   /** Folder prefix to open initially, e.g. `"invoices/"`. */
   defaultPath?: string
   onSelectionChange?: (item: FileSystemItem | null) => void
@@ -1274,24 +1254,12 @@ function FileVisual({
     </div>
   )
 }
-const VIEW_OPTIONS: Array<{
-  icon: React.ComponentType<InlineRegistryIconProps>
-  label: string
-  value: FileSystemView
-}> = [
-  { icon: GridViewGlyph, label: "Grid", value: "icons" },
-  { icon: LeftToRightListBulletGlyph, label: "List", value: "list" },
-  { icon: LayoutThreeColumnGlyph, label: "Columns", value: "columns" },
-  { icon: GalleryThumbnailsGlyph, label: "Gallery", value: "gallery" },
-]
 export function FileSystem({
   items,
   controllerRef,
   className,
-  title = "Files",
   defaultView = "icons",
   view: viewProp,
-  onViewChange,
   defaultPath = "",
   onSelectionChange,
   onFileOpen,
@@ -1303,15 +1271,7 @@ export function FileSystem({
   loadPreviewImageUrl,
   renderFilePreview,
 }: FileSystemProps) {
-  const [internalView, setInternalView] = React.useState(defaultView)
-  const view = viewProp ?? internalView
-  const setView = React.useCallback(
-    (nextView: FileSystemView) => {
-      setInternalView(nextView)
-      onViewChange?.(nextView)
-    },
-    [onViewChange]
-  )
+  const view = viewProp ?? defaultView
   const [loadedItems, setLoadedItems] = React.useState<FileSystemItem[]>([])
   const allItems = React.useMemo(
     () => (loadedItems.length ? [...items, ...loadedItems] : items),
@@ -1323,8 +1283,6 @@ export function FileSystem({
     stack: [normalizeFolderPath(defaultPath)],
   }))
   const currentPath = history.stack[history.index] ?? ""
-  const canGoBack = history.index > 0
-  const canGoForward = history.index < history.stack.length - 1
   const [selectedPath, setSelectedPath] = React.useState<string | null>(null)
   const selectedEntry = React.useMemo(() => {
     if (selectedPath === null) return null
@@ -1569,9 +1527,8 @@ export function FileSystem({
     },
     []
   )
-  // Below iPad width the view switcher collapses into a select and the sort
-  // select drops its label; below 560px the search input collapses into a
-  // popover, and below 360px the folder name is dropped too.
+  // Below iPad width the sort select drops its label; below 560px the search
+  // input collapses into a popover.
   const rootRef = React.useRef<HTMLDivElement | null>(null)
   const [headerLayout, setHeaderLayout] = React.useState<
     "full" | "compact" | "minimal"
@@ -1856,25 +1813,7 @@ export function FileSystem({
     },
     [ensureChildren, selectEntry]
   )
-  const goBack = React.useCallback(() => {
-    setHistory((previous) => ({
-      ...previous,
-      index: Math.max(0, previous.index - 1),
-    }))
-    setSearchInput("")
-    selectEntry(null)
-  }, [selectEntry])
-  const goForward = React.useCallback(() => {
-    setHistory((previous) => ({
-      ...previous,
-      index: Math.min(previous.stack.length - 1, previous.index + 1),
-    }))
-    setSearchInput("")
-    selectEntry(null)
-  }, [selectEntry])
   const currentEntries = sortedIndex.children.get(currentPath) ?? []
-  const currentFolderName =
-    currentPath === "" ? title : pathName(currentPath) || title
   const isLoadingCurrentFolder = loadingFolders.has(currentPath)
   // The list view tree saves its expanded folders here when it unmounts
   // (view switches, navigation) so returning to the list view — or to a
@@ -1964,7 +1903,6 @@ export function FileSystem({
   const openedFileName = openedFile
     ? (openedFile.file.name ?? openedFile.file.path)
     : ""
-  const activeViewOption = VIEW_OPTIONS.find((option) => option.value === view)
   const viewerCloseToolbarAction = (
     <DialogClose asChild={true}>
       <Button
@@ -1996,84 +1934,9 @@ export function FileSystem({
       )}
     >
       <FileSystemIconSpriteSheet />
-      <div className="relative grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b bg-muted/40 px-2">
-        <div className="flex min-w-0 items-center gap-0.5">
-          <button
-            type="button"
-            aria-label="Back"
-            title="Back"
-            disabled={!canGoBack}
-            onClick={goBack}
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
-          >
-            <ChevronLeft className="size-4.5" />
-          </button>
-          <button
-            type="button"
-            aria-label="Forward"
-            title="Forward"
-            disabled={!canGoForward}
-            onClick={goForward}
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
-          >
-            <ArrowRight className="size-4.5" />
-          </button>
-          {headerLayout !== "minimal" ? (
-            <span className="ml-1.5 truncate text-sm font-semibold">
-              {currentFolderName}
-            </span>
-          ) : null}
-        </div>
-        {headerLayout !== "full" || isBelowIpadWidth ? (
-          <Select
-            value={view}
-            onValueChange={(value) => setView(value as FileSystemView)}
-          >
-            <SelectTrigger
-              size="sm"
-              aria-label="View"
-              // Icon-only like the sort select: sheds the base min-width to
-              // hug icon + chevron at the filter button's 28px height.
-              className="h-7 min-h-7 w-auto min-w-0 [&_svg]:size-4"
-            >
-              <SelectValue>
-                {activeViewOption ? (
-                  <activeViewOption.icon className="size-4" />
-                ) : null}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {VIEW_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  <span className="flex items-center gap-2">
-                    <option.icon className="size-4" />
-                    {option.label}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : (
-          <Tabs
-            value={view}
-            onValueChange={(value) => setView(value as FileSystemView)}
-            className="gap-0"
-          >
-            <TabsList className="h-8 p-0.5">
-              {VIEW_OPTIONS.map((option) => (
-                <TabsTrigger
-                  key={option.value}
-                  value={option.value}
-                  aria-label={`${option.label} view`}
-                  title={option.label}
-                  className="h-7 grow-0 px-2.5 sm:h-7"
-                >
-                  <option.icon className="size-4" />
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        )}
+      {/* EverOne patch: the header has no Back / Forward buttons, folder
+          title or view switcher, only sort, filter and search. */}
+      <div className="flex h-12 shrink-0 items-center justify-end gap-2 border-b bg-muted/40 px-2">
         <div className="flex min-w-0 items-center justify-end gap-1">
           <FileSystemSortSelect
             layout={headerLayout}
