@@ -6,7 +6,14 @@ import * as viewer from "./viewer.js";
 import * as uploadPreview from "./upload-preview.js";
 import { mergeFiles, uploadNamesValid, selectionAfterRemoval, canSuggestName } from "./upload-list.js";
 import { suggestFileName } from "./extract.js";
-import { toFileSystemItems, parentPath, drivePath } from "./file-system-items.js";
+import {
+  toFileSystemItems,
+  parentPath,
+  drivePath,
+  mayBeInFolder,
+  foldersAbove,
+  searchResultItems,
+} from "./file-system-items.js";
 import { mountFileSystem } from "./vendor/extend-ui/file-system.js";
 
 const els = {
@@ -54,9 +61,16 @@ const state = {
   searchFolder: null,
   // Monotonic id; pending requests with stale ids are discarded.
   loadId: 0,
+  // The search in the listing's header (see runListingSearch()), while its
+  // box isn't empty: the query searched for last, the folder driveItem it
+  // is limited to (null for the whole drive; the folder selected when the
+  // search started), and once they're in, the results' manifest items and
+  // manifest path → driveItem.
+  listingSearch: null,
   // Currently selected file id (the one being previewed).
   selectedId: null,
-  // True while the root listing or a search request is in flight.
+  // True while the root listing or a search request is in flight (a search
+  // in the listing's header aside, see listingSearch).
   loading: false,
   // The folder New Folder, Delete Folder and Upload act on: the listing's
   // selected entry, when it's a folder, as { path, item } (item being its
@@ -118,23 +132,33 @@ function renderListing(remount = true) {
     listingData = newListingData();
     listingData.manifest = addToListing(listingData, state.items, "");
     state.folder = null;
+    // A remount empties the listing's search box.
+    endListingSearch();
   }
   const data = listingData;
+  // The listing shows either its items or, once they're in, the results of
+  // the search in its header; paths mean different entries in each.
+  const results = () => state.listingSearch?.results ? state.listingSearch : null;
+  const driveItem = (path) => (results() || data).byPath.get(path);
   const props = {
     key: listingKey,
     items: data.manifest,
+    searchResults: results()?.results ?? null,
+    onSearchChange: listingSearchChanged,
     className: "h-full rounded-lg",
     emptyLabel: state.searchQuery ? "No matching files." : "This folder is empty.",
     defaultView: "list",
     dateColumn: "createdAt",
     onSelectionChange: (entry) => {
       if (data !== listingData) return;
-      state.folder = entry && entry.kind === "folder" ? { path: entry.path, item: data.byPath.get(entry.path) } : null;
+      // New Folder, Delete Folder and Upload act on the listing's items
+      // only (see folderActions()).
+      state.folder = entry && entry.kind === "folder" && !results() ? { path: entry.path, item: driveItem(entry.path) } : null;
       // Clearing the selection keeps the current preview.
-      if (entry && entry.kind === "file") selectItem(data.byPath.get(entry.path));
+      if (entry && entry.kind === "file") selectItem(driveItem(entry.path));
       updateFolderActions();
     },
-    onFileOpen: (file) => selectItem(data.byPath.get(file.path)),
+    onFileOpen: (file) => selectItem(driveItem(file.path)),
     // Replaces the component's own navigation into the folder, which would
     // make it the listing's root.
     onFolderOpen: () => {},
@@ -188,8 +212,8 @@ function folderItemCount(folder) {
 // New Folder, Delete Folder and Upload are buttons in the listing's header
 // (a "Tools" menu when it is narrow). They act on the folder selected in the
 // listing, so they're only enabled while there is one (and the listing isn't
-// being replaced). A folder can only be deleted when it is empty: no files,
-// no subfolders.
+// being replaced, nor searched in). A folder can only be deleted when it is
+// empty: no files, no subfolders.
 function updateFolderActions() {
   if (listingProps) {
     const props = { ...listingProps, actions: folderActions() };
@@ -199,7 +223,7 @@ function updateFolderActions() {
 }
 
 function folderActions() {
-  const folder = state.loading ? null : state.folder;
+  const folder = state.loading || state.listingSearch ? null : state.folder;
   return [
     {
       id: "new-folder",
@@ -238,7 +262,7 @@ function folderDrivePath(folder) {
 }
 
 function openNewFolderDialog() {
-  if (!state.folder) return;
+  if (!state.folder || state.listingSearch) return;
   els.newFolderPath.textContent = folderDrivePath(state.folder);
   els.newFolderName.value = "";
   els.newFolderCreate.disabled = false;
@@ -266,7 +290,7 @@ async function createFolder() {
 }
 
 function openDeleteFolderDialog() {
-  if (state.loading || !canDeleteFolder(state.folder)) return;
+  if (state.loading || state.listingSearch || !canDeleteFolder(state.folder)) return;
   els.deleteFolderPath.textContent = folderDrivePath(state.folder);
   els.deleteFolderConfirm.disabled = false;
   els.deleteFolderDialog.showModal();
@@ -303,7 +327,7 @@ async function deleteFolder() {
 }
 
 function openUploadDialog() {
-  if (!state.folder) return;
+  if (!state.folder || state.listingSearch) return;
   state.upload = {
     folder: state.folder,
     listing: listingData,
@@ -559,10 +583,10 @@ async function loadRoot() {
   const id = ++state.loadId;
   state.loading = true;
   updateFolderActions();
-  els.loading.hidden = false;
+  updateLoading();
 
   try {
-    const items = await listAll(id, graph.listChildren(null));
+    const items = await listAll(() => id !== state.loadId, graph.listChildren(null));
     if (id !== state.loadId) return;
     state.items = items;
     renderListing();
@@ -573,20 +597,20 @@ async function loadRoot() {
     renderListing();
   } finally {
     if (id === state.loadId) {
-      els.loading.hidden = true;
       state.loading = false;
+      updateLoading();
       updateFolderActions();
     }
   }
 }
 
 // Follows a listing's @odata.nextLink through every page, so the listing
-// shows all of a folder's items. Returns null once load `id` is stale.
-async function listAll(id, firstPage) {
+// shows all of a folder's items. Returns null once `isStale()`.
+async function listAll(isStale, firstPage) {
   let page = await firstPage;
   let items = page.value || [];
   while (page["@odata.nextLink"]) {
-    if (id !== state.loadId) return null;
+    if (isStale()) return null;
     page = await graph.listNextPage(page["@odata.nextLink"]);
     items = items.concat(page.value || []);
   }
@@ -605,11 +629,11 @@ async function runSearch(query) {
   state.loading = true;
   updateFolderActions();
   viewer.clear();
-  els.loading.hidden = false;
+  updateLoading();
 
   try {
     const folder = state.searchFolder;
-    const items = await listAll(id, graph.search(query, undefined, folder ? folder.id : null));
+    const items = await listAll(() => id !== state.loadId, graph.search(query, undefined, folder ? folder.id : null));
     if (id !== state.loadId) return;
     state.items = items;
     renderListing();
@@ -620,11 +644,91 @@ async function runSearch(query) {
     renderListing();
   } finally {
     if (id === state.loadId) {
-      els.loading.hidden = true;
       state.loading = false;
+      updateLoading();
       updateFolderActions();
     }
   }
+}
+
+// The search box in the listing's header searches the drive through Graph,
+// like the one in the page's header, limited to the folder selected in the
+// listing when the search started (the whole drive when none is; refining
+// the query keeps that). The listing then shows the files found in their
+// folders, from the drive's root down; clearing the box shows its items
+// again, as they were.
+let listingSearchId = 0;
+
+function listingSearchChanged(value) {
+  // The folder is the selected one as typing starts, before the debounce.
+  if (!state.listingSearch && value.trim()) {
+    state.listingSearch = { query: "", folder: state.folder ? state.folder.item : null, results: null, byPath: null, loading: false };
+    updateFolderActions();
+  }
+  debouncedListingSearch(value.trim());
+}
+
+const debouncedListingSearch = debounce((query) => {
+  if (!state.listingSearch) return;
+  if (query.length === 0) {
+    endListingSearch();
+    renderListing(false);
+  } else if (query.length >= 2 && query !== state.listingSearch.query) {
+    runListingSearch(query);
+  }
+}, 300);
+
+function endListingSearch() {
+  if (!state.listingSearch) return;
+  listingSearchId++;
+  state.listingSearch = null;
+  updateLoading();
+}
+
+async function runListingSearch(query) {
+  const search = state.listingSearch;
+  const data = listingData;
+  const id = ++listingSearchId;
+  const isStale = () => id !== listingSearchId || data !== listingData;
+  search.query = query;
+  search.loading = true;
+  updateLoading();
+
+  try {
+    const { folder } = search;
+    const found = await listAll(isStale, graph.search(query, undefined, folder ? folder.id : null));
+    if (isStale()) return;
+    // OneDrive's paths rule out most of what's elsewhere (personal drives
+    // search the whole drive, folder or not); the folders above the rest
+    // tell for sure. The listing already knows some of them.
+    const candidates = found.filter((item) => !item.folder && mayBeInFolder(item, folder));
+    const known = new Map();
+    for (const item of [...data.byPath.values(), folder]) {
+      if (item && item.folder) known.set(item.id, item);
+    }
+    const folders = await foldersAbove(candidates, (folderId) => graph.getItem(folderId), known);
+    if (isStale()) return;
+    const { manifest, byPath } = searchResultItems(candidates, folders, folder ? folder.id : null);
+    search.results = manifest;
+    search.byPath = byPath;
+    renderListing(false);
+  } catch (err) {
+    if (isStale()) return;
+    showToast(err.message || "Search failed");
+    search.results = [];
+    search.byPath = new Map();
+    renderListing(false);
+  } finally {
+    if (!isStale()) {
+      search.loading = false;
+      updateLoading();
+    }
+  }
+}
+
+// "Loading…" shows while the listing's items or a search's results load.
+function updateLoading() {
+  els.loading.hidden = !state.loading && !state.listingSearch?.loading;
 }
 
 function debounce(fn, ms) {

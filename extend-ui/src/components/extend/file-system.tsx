@@ -230,6 +230,19 @@ export type FileSystemProps = {
   /** EverOne patch: shown when the folder has no items. */
   emptyLabel?: string
   /**
+   * EverOne patch: hands the toolbar search's value to the host on every
+   * change, instead of filtering the loaded items with it. The host shows
+   * what it finds as `searchResults`.
+   */
+  onSearchChange?: (value: string) => void
+  /**
+   * EverOne patch: the host's results for the toolbar search (see
+   * `onSearchChange`), shown instead of `items` and the children loaded
+   * below them, with every folder open. `null` (the default) shows the items
+   * again, their folders opened as before. Changing it clears the selection.
+   */
+  searchResults?: FileSystemItem[] | null
+  /**
    * EverOne patch: buttons shown at the left of the header, styled like the
    * sort select. When the component is narrow they collapse into a "Tools"
    * menu.
@@ -1289,6 +1302,8 @@ export function FileSystem({
   dateColumn = "updatedAt",
   actions,
   emptyLabel = "This folder is empty",
+  onSearchChange,
+  searchResults = null,
   getFileUrl,
   loadChildren,
   loadPreviewImageUrl,
@@ -1300,7 +1315,17 @@ export function FileSystem({
     () => (loadedItems.length ? [...items, ...loadedItems] : items),
     [items, loadedItems]
   )
-  const index = React.useMemo(() => buildFileSystemIndex(allItems), [allItems])
+  // EverOne patch: the host's search results (see searchResults) take the
+  // place of the items, and of what's loaded below them, while they're shown.
+  const itemsIndex = React.useMemo(
+    () => buildFileSystemIndex(allItems),
+    [allItems]
+  )
+  const resultsIndex = React.useMemo(
+    () => (searchResults ? buildFileSystemIndex(searchResults) : null),
+    [searchResults]
+  )
+  const index = resultsIndex ?? itemsIndex
   const [history, setHistory] = React.useState(() => ({
     index: 0,
     stack: [normalizeFolderPath(defaultPath)],
@@ -1317,7 +1342,17 @@ export function FileSystem({
   const searchInputRef = React.useRef<HTMLInputElement | null>(null)
   const [isSearchExpanded, setIsSearchExpanded] = React.useState(false)
   const searchQuery = normalizeSearchQuery(searchInput)
-  const isSearching = searchQuery.length > 0
+  // EverOne patch: with onSearchChange the host searches, so the query
+  // filters nothing here; the views show its results instead.
+  const isSearching = !onSearchChange && searchQuery.length > 0
+  const showsSearchResults = onSearchChange ? resultsIndex !== null : isSearching
+  const changeSearchInput = React.useCallback(
+    (value: string) => {
+      setSearchInput(value)
+      onSearchChange?.(value)
+    },
+    [onSearchChange]
+  )
   const [sort, setSort] = React.useState(DEFAULT_SORT)
   const [filters, setFilters] = React.useState<FileSystemFilter[]>([])
   const hasActiveFilters = filters.length > 0
@@ -1624,11 +1659,11 @@ export function FileSystem({
         return { index: stack.length - 1, stack }
       })
       // Navigation exits search, like Finder.
-      setSearchInput("")
+      changeSearchInput("")
       selectEntry(null)
       ensureChildren(path)
     },
-    [ensureChildren, selectEntry]
+    [changeSearchInput, ensureChildren, selectEntry]
   )
   React.useEffect(() => {
     ensureChildren(currentPath)
@@ -1845,8 +1880,24 @@ export function FileSystem({
   // (view switches, navigation) so returning to the list view — or to a
   // previously visited folder — restores the same disclosure state.
   const treeExpansionRef = React.useRef(new Map<string, readonly string[]>())
+  // EverOne patch: the search results' tree opens every folder; it keeps its
+  // own disclosure apart, so the items' one comes back once they're shown
+  // again.
+  const resultsTreeExpansionRef = React.useRef(
+    new Map<string, readonly string[]>()
+  )
   // EverOne patch: the mounted list view tree's model, for the controller.
   const treeModelRef = React.useRef<TreeModelHandle | null>(null)
+  // EverOne patch: new search results (or none any more) clear the
+  // selection, in the tree too: a remounted or reset tree keeps the selected
+  // path, which may well be in the results.
+  const shownSearchResultsRef = React.useRef(searchResults)
+  React.useEffect(() => {
+    if (shownSearchResultsRef.current === searchResults) return
+    shownSearchResultsRef.current = searchResults
+    treeModelRef.current?.select(null)
+    selectEntry(null)
+  }, [searchResults, selectEntry])
   const latestIndexRef = React.useRef(index)
   React.useLayoutEffect(() => {
     latestIndexRef.current = index
@@ -1907,6 +1958,7 @@ export function FileSystem({
     emptyLabel,
     entries: currentEntries,
     ensureChildren,
+    expandAll: resultsIndex !== null,
     fileFilter,
     getFileUrl,
     index: sortedIndex,
@@ -1919,13 +1971,27 @@ export function FileSystem({
     poolStagePath,
     registerStageHost,
     renderFilePreview,
-    searchQuery,
+    searchQuery: isSearching ? searchQuery : "",
     selectedEntry,
     selectedPath,
     sort,
-    treeExpansionRef,
+    treeExpansionRef: resultsIndex ? resultsTreeExpansionRef : treeExpansionRef,
     treeModelRef,
   }
+  // EverOne patch: switching between the items and the host's search
+  // results remounts the view.
+  const viewKey = resultsIndex ? "search-results" : "items"
+  // EverOne patch: the host's search results count the files found, not
+  // the folders they're in.
+  const searchResultCount = React.useMemo(() => {
+    if (!resultsIndex) return 0
+    let count = 0
+    for (const file of resultsIndex.files.values()) {
+      if (!fileFilter || fileFilter(file)) count += 1
+    }
+    return count
+  }, [fileFilter, resultsIndex])
+  const footerCount = resultsIndex ? searchResultCount : currentEntries.length
   const openedFileName = openedFile
     ? (openedFile.file.name ?? openedFile.file.path)
     : ""
@@ -1998,7 +2064,7 @@ export function FileSystem({
                 : headerLayout
             }
             onExpandedChange={setIsSearchExpanded}
-            onValueChange={setSearchInput}
+            onValueChange={changeSearchInput}
             value={searchInput}
           />
         </div>
@@ -2064,10 +2130,10 @@ export function FileSystem({
         {isLoadingCurrentFolder && currentEntries.length === 0 ? (
           <FileSystemEmptyState label="Loading…" isLoading />
         ) : currentEntries.length === 0 &&
-          (view !== "columns" || isSearching || hasActiveFilters) ? (
+          (view !== "columns" || showsSearchResults || hasActiveFilters) ? (
           <FileSystemEmptyState
             label={
-              isSearching
+              showsSearchResults
                 ? `No results for “${searchInput.trim()}”`
                 : hasActiveFilters
                   ? "No items match the active filters"
@@ -2075,13 +2141,13 @@ export function FileSystem({
             }
           />
         ) : view === "icons" ? (
-          <FileSystemIconsView {...viewProps} />
+          <FileSystemIconsView key={viewKey} {...viewProps} />
         ) : view === "list" ? (
-          <FileSystemListView {...viewProps} />
+          <FileSystemListView key={viewKey} {...viewProps} />
         ) : view === "columns" ? (
-          <FileSystemColumnsView {...viewProps} />
+          <FileSystemColumnsView key={viewKey} {...viewProps} />
         ) : (
-          <FileSystemGalleryView {...viewProps} />
+          <FileSystemGalleryView key={viewKey} {...viewProps} />
         )}
       </div>
       <div
@@ -2089,12 +2155,12 @@ export function FileSystem({
         className="flex h-7 shrink-0 items-center justify-center gap-1 border-t bg-muted/40 px-3 text-xs text-muted-foreground"
       >
         <span>
-          {currentEntries.length}{" "}
-          {isSearching
-            ? currentEntries.length === 1
+          {footerCount}{" "}
+          {showsSearchResults
+            ? footerCount === 1
               ? "result"
               : "results"
-            : currentEntries.length === 1
+            : footerCount === 1
               ? "item"
               : "items"}
         </span>
@@ -3028,6 +3094,11 @@ type FileSystemViewProps = {
   entries: FileSystemEntry[]
   /** EverOne patch: lazily loads a folder's children (see loadChildren). */
   ensureChildren: (folderPath: string) => void
+  /**
+   * EverOne patch: the list view opens every folder, as it does for filters
+   * (the host's search results).
+   */
+  expandAll: boolean
   fileFilter: ((file: FileEntry) => boolean) | null
   getFileUrl?: (file: FileSystemFileItem) => string | Promise<string>
   index: FileSystemIndex
@@ -3511,6 +3582,7 @@ function FileSystemListView({
   dateColumn,
   emptyLabel,
   ensureChildren,
+  expandAll,
   fileFilter,
   index,
   loadingFolders,
@@ -3599,7 +3671,7 @@ function FileSystemListView({
         currentPath={currentPath}
         dateColumn={dateColumn}
         ensureChildren={ensureChildren}
-        hasActiveFilters={fileFilter !== null}
+        hasActiveFilters={fileFilter !== null || expandAll}
         index={index}
         loadingFolders={loadingFolders}
         initialSelectedPath={

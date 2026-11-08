@@ -81,6 +81,13 @@ change since is marked with an `EverOne patch` comment:
 * **`dateColumn`** — `"createdAt"` makes the list view's date column "Date
   Created" (sorting by it); default `"updatedAt"` ("Date Modified").
 * **`emptyLabel`** — the empty-folder message.
+* **`onSearchChange`** / **`searchResults`** — with `onSearchChange`, the
+  toolbar search hands its value to the host on every change instead of
+  filtering the loaded items. The host's results (`searchResults`, a
+  manifest of their own) are shown instead of the items, every folder open,
+  in a view of their own (switching remounts it, the items' disclosure
+  comes back afterwards); the footer counts the files found. New results,
+  or `null` again, clear the selection.
 * **`originalName`** on files — when `name` is a shortened display name,
   the file type (icon, kind, MIME fallback) is read from `originalName`.
 * **Date-only timestamps** (`"2021-03-04"`) are shown as just the day, in

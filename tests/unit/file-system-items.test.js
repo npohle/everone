@@ -6,6 +6,9 @@ import {
   toFileSystemItems,
   parentPath,
   drivePath,
+  mayBeInFolder,
+  foldersAbove,
+  searchResultItems,
 } from "../../file-system-items.js";
 
 const file = (id, name, extra = {}) => ({
@@ -149,4 +152,147 @@ test("drivePath starts from the parent path of a search result's topmost entry",
   // Without a parentReference (or a path on it) the entry counts as top-level.
   byPath.set("Rechnungen/", folder("d1", "Rechnungen", 1));
   assert.equal(drivePath("Rechnungen/", byPath), "/Rechnungen");
+});
+
+// A drive for the search tests: root › Documents › Post › {Brief, Archiv ›
+// Alt}, root › Fotos, with each item's parentReference as Graph gives it.
+const ROOT_ID = "root-id";
+const at = (item, parent, path) => ({ ...item, parentReference: { id: parent, path: `/drive/root:${path}` } });
+const drive = {
+  documents: at(folder("documents", "Documents", 2), ROOT_ID, ""),
+  post: at(folder("post", "2020-01-01_Post_Eingang", 2), "documents", "/Documents"),
+  archiv: at(folder("archiv", "Archiv", 1), "post", "/Documents/2020-01-01_Post_Eingang"),
+  alt: at(folder("alt", "Alt", 1), "archiv", "/Documents/2020-01-01_Post_Eingang/Archiv"),
+  fotos: at(folder("fotos", "Fotos", 1), ROOT_ID, ""),
+};
+const found = {
+  brief: at(file("brief", "2021-03-04_Brief_Bank.pdf"), "post", "/Documents/2020-01-01_Post_Eingang"),
+  old: at(file("old", "old.pdf"), "alt", "/Documents/2020-01-01_Post_Eingang/Archiv/Alt"),
+  foto: at(file("foto", "foto.jpg"), "fotos", "/Fotos"),
+  top: at(file("top", "top.pdf"), ROOT_ID, ""),
+  // A folder found by its name.
+  archiv: drive.archiv,
+};
+const allFolders = new Map(Object.values(drive).map((item) => [item.id, item]));
+
+test("mayBeInFolder checks the paths OneDrive gives", () => {
+  assert.equal(mayBeInFolder(found.brief, drive.post), true);
+  assert.equal(mayBeInFolder(found.old, drive.post), true);
+  assert.equal(mayBeInFolder(found.old, drive.documents), true);
+  assert.equal(mayBeInFolder(found.foto, drive.documents), false);
+  assert.equal(mayBeInFolder(found.top, drive.documents), false);
+  // A folder whose name starts like the other's isn't inside it.
+  const postfach = at(folder("postfach", "2020-01-01_Post_EingangX", 1), "documents", "/Documents");
+  const inPostfach = at(file("x", "x.pdf"), "postfach", "/Documents/2020-01-01_Post_EingangX");
+  assert.equal(mayBeInFolder(inPostfach, drive.post), false);
+  // Without a folder, everything is in the drive.
+  assert.equal(mayBeInFolder(found.foto, null), true);
+});
+
+test("mayBeInFolder compares percent-encoded paths decoded", () => {
+  const muller = at(folder("m", "Müller GmbH", 1), "documents", "/Documents");
+  const inMuller = at(file("x", "x.pdf"), "m", "/Documents/M%C3%BCller%20GmbH");
+  assert.equal(mayBeInFolder(inMuller, muller), true);
+});
+
+test("mayBeInFolder can't tell without paths", () => {
+  const { path, ...noPath } = found.foto.parentReference;
+  assert.equal(mayBeInFolder({ ...found.foto, parentReference: noPath }, drive.documents), true);
+  assert.equal(mayBeInFolder(found.foto, { ...drive.documents, parentReference: { id: ROOT_ID } }), true);
+});
+
+test("foldersAbove fetches every folder up to the root, each once", async () => {
+  const fetched = [];
+  const getItem = async (id) => {
+    fetched.push(id);
+    return allFolders.get(id);
+  };
+  const folders = await foldersAbove([found.brief, found.old, found.top], getItem);
+  assert.deepEqual([...folders.keys()].sort(), ["alt", "archiv", "documents", "post"]);
+  assert.deepEqual([...fetched].sort(), ["alt", "archiv", "documents", "post"]);
+});
+
+test("foldersAbove only fetches the folders it doesn't know yet", async () => {
+  const fetched = [];
+  const getItem = async (id) => {
+    fetched.push(id);
+    return allFolders.get(id);
+  };
+  const known = new Map([["post", drive.post], ["documents", drive.documents]]);
+  const folders = await foldersAbove([found.old], getItem, known);
+  assert.deepEqual([...folders.keys()].sort(), ["alt", "archiv", "documents", "post"]);
+  assert.deepEqual(fetched.sort(), ["alt", "archiv"]);
+});
+
+test("foldersAbove stops at the root when the paths are missing", async () => {
+  const root = { id: ROOT_ID, name: "root", folder: { childCount: 2 }, parentReference: { driveId: "d" } };
+  const noPath = (item) => ({ ...item, parentReference: { id: item.parentReference.id } });
+  const items = new Map([...allFolders].map(([id, item]) => [id, noPath(item)]).concat([[ROOT_ID, root]]));
+  const folders = await foldersAbove([noPath(found.foto)], async (id) => items.get(id));
+  assert.deepEqual([...folders.keys()].sort(), ["fotos", ROOT_ID]);
+});
+
+// The manifest items as "path (kind)", sorted.
+const listed = ({ manifest }) => manifest.map((item) => `${item.path} (${item.kind})`).sort();
+
+test("searchResultItems lists the files found in their folders, from the drive's root", () => {
+  const result = searchResultItems(Object.values(found), allFolders);
+  assert.deepEqual(listed(result), [
+    "Documents/ (folder)",
+    "Documents/Post/ (folder)",
+    "Documents/Post/Archiv/ (folder)",
+    "Documents/Post/Archiv/Alt/ (folder)",
+    "Documents/Post/Archiv/Alt/old.pdf (file)",
+    "Documents/Post/Brief (file)",
+    "Fotos/ (folder)",
+    "Fotos/foto.jpg (file)",
+    "top.pdf (file)",
+  ]);
+  // Each path maps to its driveItem.
+  assert.equal(result.byPath.get("Documents/Post/Archiv/Alt/old.pdf"), found.old);
+  assert.equal(result.byPath.get("Documents/Post/"), drive.post);
+  // Folders hold just what was found: they're not lazy.
+  for (const item of result.manifest) assert.equal(item.hasChildren, undefined);
+  const post = result.manifest.find((item) => item.path === "Documents/Post/");
+  assert.equal(post.name, "Post");
+  assert.equal(post.createdAt, "2020-01-01");
+});
+
+test("searchResultItems leaves out what isn't in the given folder", () => {
+  const result = searchResultItems(Object.values(found), allFolders, "archiv");
+  assert.deepEqual(listed(result), [
+    "Documents/ (folder)",
+    "Documents/Post/ (folder)",
+    "Documents/Post/Archiv/ (folder)",
+    "Documents/Post/Archiv/Alt/ (folder)",
+    "Documents/Post/Archiv/Alt/old.pdf (file)",
+  ]);
+  assert.deepEqual(listed(searchResultItems(Object.values(found), allFolders, "fotos")), [
+    "Fotos/ (folder)",
+    "Fotos/foto.jpg (file)",
+  ]);
+  assert.deepEqual(listed(searchResultItems([found.top, found.archiv], allFolders, "documents")), []);
+});
+
+test("searchResultItems keeps equal display names apart", () => {
+  const a = at(file("a", "2021-01-01_Rechnung_a.pdf"), "post", "/Documents/2020-01-01_Post_Eingang");
+  const b = at(file("b", "2021-02-01_Rechnung_b.pdf"), "post", "/Documents/2020-01-01_Post_Eingang");
+  const { manifest } = searchResultItems([a, b], allFolders);
+  const files = manifest.filter((item) => item.kind === "file");
+  assert.equal(files.length, 2);
+  assert.notEqual(files[0].path, files[1].path);
+  assert.deepEqual(files.map((item) => item.name), ["Rechnung", "Rechnung"]);
+});
+
+test("searchResultItems drops files whose folders it doesn't know", () => {
+  const lost = at(file("lost", "lost.pdf"), "unknown", "/Somewhere");
+  assert.deepEqual(listed(searchResultItems([lost, found.top], allFolders)), ["top.pdf (file)"]);
+});
+
+test("searchResultItems puts what's below the fetched root at the top", () => {
+  const root = { id: ROOT_ID, name: "root", folder: { childCount: 2 }, parentReference: { driveId: "d" } };
+  const fotos = { ...drive.fotos, parentReference: { id: ROOT_ID } };
+  const foto = { ...found.foto, parentReference: { id: "fotos" } };
+  const folders = new Map([[ROOT_ID, root], ["fotos", fotos]]);
+  assert.deepEqual(listed(searchResultItems([foto], folders)), ["Fotos/ (folder)", "Fotos/foto.jpg (file)"]);
 });

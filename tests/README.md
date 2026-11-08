@@ -171,6 +171,20 @@ listing is narrow, as on a phone (`13-mobile-layout.spec.ts`).
 date split, lazy loading of subfolders, and listing every page of a folder
 (by rewriting Graph's `$top` to 2 with `page.route`).
 
+**The listing's search** (`tests/e2e/14-listing-search.spec.ts`): the
+search box in the listing's header (behind a "Search" button when the
+listing is narrow) searches the drive through Graph, limited to the
+selected folder, and shows the files found in their folders, from the
+drive's root down. Personal drives search the whole drive even when asked
+to search a folder, so the app keeps only what's below it. The tests search
+for "Travelstar", in the Lieferschein sample PDFs in
+`Documents/e2e-test-search-01` and `-02`. OneDrive hasn't indexed those
+(see Known gaps), so `LISTING-SEARCH-001`/`-002` answer the search request
+via `page.route` with what Graph returns once they are: the PDFs' real
+driveItems, those folders, and a file at the drive's root.
+`LISTING-SEARCH-003` searches for real and checks nothing from outside the
+selected folder shows.
+
 **The look and feel** (`tests/e2e/12-look-and-feel.spec.ts`) checks that
 the page's own controls (`styles.css`) look like extend-ui's: for each
 button, input and dialog it renders an element with the matching extend-ui
