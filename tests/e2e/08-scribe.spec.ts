@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { test, expect } from "./fixtures.ts";
-import { listingRow, openFolder } from "./lib/listing.ts";
+import { listingRow, selectFolder } from "./lib/listing.ts";
 import type { Page } from "@playwright/test";
 
 const SAMPLE_PDF_URL = "https://www.successcontrol.de/wp-content/uploads/2021/03/Lieferschein-Muster-PDF.pdf";
@@ -59,8 +59,8 @@ test("SCRIBE-001: extract the text of a previewed PDF into a modal dialog", asyn
   try {
     await uploadToDocuments(page, folderName, SAMPLE_PDF_NAME, pdfBytes);
 
-    await openFolder(page, "Documents");
-    await openFolder(page, folderName);
+    await selectFolder(page, "Documents");
+    await selectFolder(page, folderName);
     await page.screenshot({ path: `${artefactsDir}/08-00-test-folder.png` });
 
     // No underscore in the name, so the list shows it unchanged.
@@ -102,8 +102,8 @@ test("SCRIBE-002: the Scribe button is only shown for PDF documents", async ({ p
 
   try {
     await uploadToDocuments(page, folderName, "notes.txt", Buffer.from("not a pdf\n"));
-    await openFolder(page, "Documents");
-    await openFolder(page, folderName);
+    await selectFolder(page, "Documents");
+    await selectFolder(page, folderName);
 
     await listingRow(page, "notes.txt").click();
     await expect(page.locator("#viewer-title")).toHaveText("notes.txt");

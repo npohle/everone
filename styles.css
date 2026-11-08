@@ -277,28 +277,9 @@ a:where(:not(.button, .extend-ui *, [data-slot], [data-slot] *)):hover { text-de
   font-size: 1.125rem;
 }
 
-/* Like extend-ui's (shadcn's) Breadcrumb. */
-.breadcrumbs {
-  flex: 1;
-  min-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--foreground);
-}
-.breadcrumbs .crumb {
-  color: var(--muted-foreground);
-  cursor: pointer;
-  transition: color var(--transition);
-}
-.breadcrumbs .crumb:hover {
-  color: var(--foreground);
-  text-decoration: none;
-}
-.breadcrumbs .sep { margin: 0 0.375rem; color: var(--muted-foreground); }
-
 .topbar-actions {
   display: flex;
+  margin-left: auto;
   align-items: center;
   gap: 0.75rem;
 }
@@ -401,7 +382,6 @@ a:where(:not(.button, .extend-ui *, [data-slot], [data-slot] *)):hover { text-de
 
 @media (max-width: 640px) {
   .topbar-actions input[type="search"] { width: 140px; }
-  .breadcrumbs { display: none; }
 }
 
 .loading {

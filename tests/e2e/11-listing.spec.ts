@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { test, expect } from "./fixtures.ts";
-import { listingFiles, listingRow, listingRows, openFolder, rowDate } from "./lib/listing.ts";
+import { filesInFolder, listingRow, rowDate, rowsInFolder, selectFolder } from "./lib/listing.ts";
 import type { Page, Request } from "@playwright/test";
 
 const randomFolderName = () => `e2e-test-${randomBytes(6).toString("hex")}`;
@@ -44,7 +44,7 @@ async function removeFromDocuments(page: Page, folder: string) {
 async function openDocuments(page: Page) {
   await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
-  await openFolder(page, "Documents");
+  await selectFolder(page, "Documents");
 }
 
 // Graph requests listing a folder's children, recorded from now on.
@@ -70,8 +70,8 @@ test("LISTING-001: the folder is listed in the File System's list view, names sp
     ]);
     await page.reload();
     await expect(page.getByText("Loading")).not.toBeVisible();
-    await openFolder(page, "Documents");
-    await openFolder(page, folderName);
+    await selectFolder(page, "Documents");
+    await selectFolder(page, folderName);
     await page.screenshot({ path: `${artefactsDir}/11-00-folder.png` });
 
     // The list view, with its name / date / size columns.
@@ -83,7 +83,7 @@ test("LISTING-001: the folder is listed in the File System's list view, names sp
 
     // Folders are rows too.
     await expect(listingRow(page, "Archiv")).toHaveAttribute("data-item-type", "folder");
-    await expect(listingRows(page)).toHaveCount(4);
+    await expect(await rowsInFolder(page, folderName)).toHaveCount(4);
 
     // "YYYY-MM-DD_" goes to the Date Created column, the name is cut at the
     // next underscore; both "Rechnung"s are listed, each with its own date.
@@ -116,11 +116,11 @@ test("LISTING-002: subfolders load their children when expanded", async ({ page 
     ]);
     await page.reload();
     await expect(page.getByText("Loading")).not.toBeVisible();
-    await openFolder(page, "Documents");
+    await selectFolder(page, "Documents");
 
     const requests = recordChildrenRequests(page);
-    await openFolder(page, folderName);
-    await expect(listingRows(page)).toHaveCount(2);
+    await selectFolder(page, folderName);
+    await expect(await rowsInFolder(page, folderName)).toHaveCount(2);
     // Only the folder itself was listed, not its subfolder.
     requests.length = 0;
 
@@ -130,18 +130,18 @@ test("LISTING-002: subfolders load their children when expanded", async ({ page 
     await expect(archiv).toHaveAttribute("aria-expanded", "true");
     const brief = listingRow(page, "Brief");
     await expect(brief).toBeVisible();
-    await expect(brief).toHaveAttribute("aria-level", "2");
+    // Documents › folder › Archiv › Brief, all in the one listing.
+    await expect(brief).toHaveAttribute("aria-level", "4");
     await expect(rowDate(brief)).toHaveAttribute("title", "Jan 2, 2019");
-    await expect(listingRow(page, "Tief")).toHaveAttribute("aria-level", "2");
+    await expect(listingRow(page, "Tief")).toHaveAttribute("aria-level", "4");
     expect(requests).toHaveLength(1);
-    // Still in the same folder.
-    await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(folderName);
+    await expect(listingRow(page, "Documents")).toHaveAttribute("aria-level", "1");
     await page.screenshot({ path: `${artefactsDir}/11-10-expanded.png` });
 
     // And one level deeper.
     await listingRow(page, "Tief").click();
     const deep = listingRow(page, "deep.txt");
-    await expect(deep).toHaveAttribute("aria-level", "3");
+    await expect(deep).toHaveAttribute("aria-level", "5");
     expect(requests).toHaveLength(2);
     await page.screenshot({ path: `${artefactsDir}/11-11-expanded-deeper.png` });
 
@@ -156,11 +156,13 @@ test("LISTING-002: subfolders load their children when expanded", async ({ page 
     await expect(brief).toBeVisible();
     expect(requests).toHaveLength(2);
 
-    // Double-clicking a nested folder opens it, with its whole path.
+    // Double-clicking a nested folder selects it, but doesn't make it the
+    // listing's root.
     await listingRow(page, "Tief").dblclick();
-    await expect(page.locator("#breadcrumbs")).toContainText(`Documents›${folderName}›Archiv›Tief`);
-    await expect(listingRow(page, "deep.txt")).toHaveAttribute("aria-level", "1");
-    await page.screenshot({ path: `${artefactsDir}/11-12-nested-opened.png` });
+    await expect(listingRow(page, "Tief")).toHaveAttribute("aria-selected", "true");
+    await expect(listingRow(page, "Documents")).toHaveAttribute("aria-level", "1");
+    await expect(listingRow(page, "Tief")).toHaveAttribute("aria-level", "4");
+    await page.screenshot({ path: `${artefactsDir}/11-12-nested-double-clicked.png` });
   } finally {
     await removeFromDocuments(page, folderName);
   }
@@ -181,10 +183,10 @@ test("LISTING-003: all of a folder's items are listed, across every page", async
     const requests = recordChildrenRequests(page);
     await page.reload();
     await expect(page.getByText("Loading")).not.toBeVisible();
-    await openFolder(page, "Documents");
-    await openFolder(page, folderName);
+    await selectFolder(page, "Documents");
+    await selectFolder(page, folderName);
 
-    await expect(listingFiles(page)).toHaveCount(names.length);
+    await expect(await filesInFolder(page, folderName)).toHaveCount(names.length);
     for (const name of names) await expect(listingRow(page, name)).toBeVisible();
     await expect(page.locator("#status")).toHaveText("5 items");
     expect(requests.filter((req) => req.url().includes("skiptoken")).length).toBeGreaterThanOrEqual(2);

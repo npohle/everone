@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test, expect } from "./fixtures.ts";
-import { listingFiles, listingRow, openFolder, rowDate } from "./lib/listing.ts";
+import { filesInFolder, listingRow, rowDate, selectFolder } from "./lib/listing.ts";
 import type { Locator, Page } from "@playwright/test";
 
 // UPLOAD-005 holds a real Cloudflare API token, which ends up in the
@@ -80,7 +80,7 @@ async function signInToCloudflare(page: Page, accessToken: string) {
 async function openDocuments(page: Page) {
   await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
-  await openFolder(page, "Documents");
+  await selectFolder(page, "Documents");
 }
 
 async function createFolderViaUi(page: Page, name: string) {
@@ -147,15 +147,14 @@ test("UPLOAD-001: upload multiple files into a new folder", async ({ page }) => 
   const folderName = randomFolderName();
   const files = createLocalFiles("file1.txt", "file2.txt", "file3.txt", "file4.txt");
   const renamed = "2020-02-02_UPLOADTEST01.txt";
-  const listing = page.locator("#listing");
 
   await openDocuments(page);
   await page.screenshot({ path: `${artefactsDir}/07-00-documents.png` });
 
   try {
     await createFolderViaUi(page, folderName);
-    await openFolder(page, folderName);
-    await expect(listing).toContainText("This folder is empty.");
+    await selectFolder(page, folderName);
+    await expect(page.locator("#status")).toHaveText("0 items");
 
     const dialog = await openUploadDialog(page);
     await expect(dialog).toContainText(`/Documents/${folderName}`);
@@ -223,8 +222,10 @@ test("UPLOAD-001: upload multiple files into a new folder", async ({ page }) => 
     await closeBtn.click();
     await expect(dialog).not.toBeVisible();
     await expect(page.getByText("Loading")).not.toBeVisible();
-    await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(folderName);
-    await expect(listingFiles(page)).toHaveCount(3);
+    // The folder is listed anew, and stays selected.
+    await expect(listingRow(page, folderName)).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("#status")).toHaveText("3 items");
+    await expect(await filesInFolder(page, folderName)).toHaveCount(3);
     await expect(listingRow(page, "file1.txt")).toBeVisible();
     await expect(listingRow(page, "file3.txt")).toBeVisible();
     // The listing splits the date prefix off into its Date Created column.
@@ -248,12 +249,11 @@ test("UPLOAD-002: cancelling the Upload dialog uploads nothing", async ({ page }
   const artefactsDir = process.env.ARTEFACTS_DIR;
   const folderName = randomFolderName();
   const files = createLocalFiles("cancel1.txt", "cancel2.txt");
-  const listing = page.locator("#listing");
 
   await openDocuments(page);
   try {
     await createFolderViaUi(page, folderName);
-    await openFolder(page, folderName);
+    await selectFolder(page, folderName);
 
     const dialog = await openUploadDialog(page);
     // Nothing picked yet, so there is nothing to upload.
@@ -265,9 +265,10 @@ test("UPLOAD-002: cancelling the Upload dialog uploads nothing", async ({ page }
     await page.screenshot({ path: `${artefactsDir}/07-10-cancelled.png` });
 
     await page.reload();
-    await openFolder(page, "Documents");
-    await openFolder(page, folderName);
-    await expect(listing).toContainText("This folder is empty.");
+    await expect(page.getByText("Loading")).not.toBeVisible();
+    await selectFolder(page, "Documents");
+    await selectFolder(page, folderName);
+    await expect(page.locator("#status")).toHaveText("0 items");
 
     // Re-opening starts from an empty list.
     const reopened = await openUploadDialog(page);
@@ -283,12 +284,11 @@ test("UPLOAD-003: files that already exist are marked as failed, others still up
   const artefactsDir = process.env.ARTEFACTS_DIR;
   const folderName = randomFolderName();
   const files = createLocalFiles("existing.txt", "fresh.txt");
-  const listing = page.locator("#listing");
 
   await openDocuments(page);
   try {
     await createFolderViaUi(page, folderName);
-    await openFolder(page, folderName);
+    await selectFolder(page, folderName);
 
     let dialog = await openUploadDialog(page);
     await pickFiles(page, dialog, [files["existing.txt"]]);
@@ -311,7 +311,7 @@ test("UPLOAD-003: files that already exist are marked as failed, others still up
     await closeBtn.click();
     await expect(dialog).not.toBeVisible();
     await expect(page.getByText("Loading")).not.toBeVisible();
-    await expect(listingFiles(page)).toHaveCount(2);
+    await expect(await filesInFolder(page, folderName)).toHaveCount(2);
     await expect(listingRow(page, "fresh.txt")).toBeVisible();
   } finally {
     await removeFromDocuments(page, folderName);

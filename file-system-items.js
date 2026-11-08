@@ -79,3 +79,30 @@ export function toFileSystemItems(driveItems, parentPath = "", taken = new Set()
     };
   });
 }
+
+// The manifest path of the folder the entry at `path` sits in ("" for the
+// component's root).
+export function parentPath(path) {
+  const trimmed = path.endsWith("/") ? path.slice(0, -1) : path;
+  return trimmed.slice(0, trimmed.lastIndexOf("/") + 1);
+}
+
+// The OneDrive path ("/Documents/Post") of the entry at manifest `path`.
+// Manifest paths are made of display names, so the real names come from the
+// driveItems behind the entry and the folders above it (`byPath`: manifest
+// path → driveItem). The topmost one can sit anywhere in the drive (search
+// results do), so the path above it comes from its parentReference.
+export function drivePath(path, byPath) {
+  const paths = [];
+  for (let i = path.indexOf("/"); i !== -1; i = path.indexOf("/", i + 1)) {
+    paths.push(path.slice(0, i + 1));
+  }
+  if (path && !path.endsWith("/")) paths.push(path);
+  const items = paths.map((p) => byPath.get(p)).filter(Boolean);
+  if (items.length === 0) return "/";
+  // e.g. "/drive/root:/Documents/M%C3%BCller", percent-encoded.
+  const above = items[0].parentReference?.path ?? "";
+  const colon = above.indexOf(":");
+  const prefix = colon === -1 ? "" : decodeURIComponent(above.slice(colon + 1));
+  return `${prefix}/${items.map((item) => item.name).join("/")}`;
+}

@@ -60,8 +60,13 @@ change since is marked with an `EverOne patch` comment:
   callbacks read the latest index through a ref (the tree reads its options
   only once), so lazily loaded rows get their columns and can be selected.
 * **`onFolderOpen`** — replaces the built-in navigation into a folder, like
-  `onFileOpen` does for files. EverOne keeps the current folder itself
-  (breadcrumbs, Up, New Folder, Delete Folder, Upload).
+  `onFileOpen` does for files. EverOne never navigates: the listing's root
+  stays the drive's, and the selected folder is the one New Folder, Delete
+  Folder and Upload act on.
+* **`controllerRef`** (`FileSystemController`, also on the object
+  `mountFileSystem` returns) — `reloadFolder(path)` fetches a folder's
+  children anew after they changed (and opens the folder), `select(path)`
+  selects an entry (opening the folders above it).
 * **`dateColumn`** — `"createdAt"` makes the list view's date column "Date
   Created" (sorting by it); default `"updatedAt"` ("Date Modified").
 * **`emptyLabel`** — the empty-folder message.

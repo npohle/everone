@@ -16,7 +16,6 @@
       <span class="logo" aria-hidden="true">☁</span>
       <span>EverOne: Browse Microsoft OneDrive</span>
     </div>
-    <nav id="breadcrumbs" class="breadcrumbs" aria-label="Breadcrumbs"></nav>
     <div class="topbar-actions">
       <input id="search" type="search" placeholder="Search OneDrive…" autocomplete="off" />
       <div class="auth-group" id="onedrive-auth" role="group" aria-label="OneDrive account">
@@ -47,10 +46,10 @@
 
     <section id="browser" class="browser" hidden>
       <div class="toolbar">
-        <button id="up-btn" type="button" title="Up one level">↑ Up</button>
-        <button id="new-folder-btn" type="button" title="Create a folder here">New Folder</button>
-        <button id="delete-folder-btn" type="button" title="Delete this folder (only when empty)" disabled>Delete Folder</button>
-        <button id="upload-btn" type="button" title="Upload files into this folder">Upload</button>
+        <button id="up-btn" type="button" title="Select the folder above the selected item" disabled>↑ Up</button>
+        <button id="new-folder-btn" type="button" title="Create a folder in the selected folder" disabled>New Folder</button>
+        <button id="delete-folder-btn" type="button" title="Delete the selected folder (only when empty)" disabled>Delete Folder</button>
+        <button id="upload-btn" type="button" title="Upload files into the selected folder" disabled>Upload</button>
         <span id="status" class="status"></span>
       </div>
       <div class="split">

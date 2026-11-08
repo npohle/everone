@@ -6,7 +6,7 @@ import * as viewer from "./viewer.js";
 import * as uploadPreview from "./upload-preview.js";
 import { mergeFiles, uploadNamesValid, selectionAfterRemoval, canSuggestName } from "./upload-list.js";
 import { suggestFileName } from "./extract.js";
-import { toFileSystemItems } from "./file-system-items.js";
+import { toFileSystemItems, parentPath, drivePath } from "./file-system-items.js";
 import { mountFileSystem } from "./vendor/extend-ui/file-system.js";
 
 const els = {
@@ -25,7 +25,6 @@ const els = {
   status: document.getElementById("status"),
   upBtn: document.getElementById("up-btn"),
   search: document.getElementById("search"),
-  breadcrumbs: document.getElementById("breadcrumbs"),
   toast: document.getElementById("toast"),
   newFolderBtn: document.getElementById("new-folder-btn"),
   newFolderDialog: document.getElementById("new-folder-dialog"),
@@ -54,25 +53,32 @@ const els = {
 };
 
 const state = {
-  // Stack of folder items the user navigated through. The last entry is current.
-  stack: [],
-  // All items of the current folder (or search) being displayed.
+  // The drive root's items (or the search results) the listing starts from.
   items: [],
-  // The listing's view; kept when the listing is rebuilt for another folder.
+  // The listing's view; kept when the listing is rebuilt for a search.
   view: "list",
   searchQuery: "",
+  // The folder driveItem a search is limited to (null for the whole drive),
+  // and its OneDrive path: the folder selected when the search started.
+  searchFolder: null,
+  searchIn: "/",
   // Monotonic id; pending requests with stale ids are discarded.
   loadId: 0,
   // Currently selected file id (the one being previewed).
   selectedId: null,
-  // True while a folder listing or search request is in flight.
+  // True while the root listing or a search request is in flight.
   loading: false,
-  // Upload dialog: target folder, picked files, the name each file is
+  // The listing's selected entry (its manifest path), and the folder New
+  // Folder, Delete Folder and Upload act on: that entry, when it's a folder,
+  // as { path, item } (item being its driveItem).
+  selectedPath: null,
+  folder: null,
+  // Upload dialog: target folder ({ path, item }) and the listing it is in, picked files, the name each file is
   // uploaded as and its result (both keyed by File), and the file shown in
   // the preview pane, plus the files whose name is being suggested by
   // Extract right now. phase is "select" (editable), "uploading" (read-only)
   // or "done".
-  upload: { folder: null, files: [], names: new Map(), results: new Map(), selected: null, suggesting: new Set(), phase: "select" },
+  upload: { folder: null, listing: null, files: [], names: new Map(), results: new Map(), selected: null, suggesting: new Set(), phase: "select" },
 };
 
 function showToast(msg, ms = 4000) {
@@ -93,57 +99,72 @@ function errorDump(err) {
 }
 
 // The listing is extend-ui's File System component (see extend-ui/), in its
-// list view: the current folder's (or search's) items, with folders that
-// load their children when they're expanded. Rows show each name split into
+// list view: the drive root's (or a search's) items, with folders that load
+// their children when they're expanded. Rows show each name split into
 // display name and reference date (file-system-items.js); clicking a file
-// previews it, double-clicking a folder opens it here (breadcrumbs, toolbar).
+// previews it, selecting a folder makes it the one the toolbar acts on. The
+// listing never navigates: its root stays the drive's.
 let listing = null;
 let listingKey = 0;
 
-function renderListing() {
-  // Manifest path → driveItem, for the component's callbacks. Paths are
-  // only unique within one rendering, so every rendering starts afresh (and
-  // remounts the component, dropping the previous folder's lazy loads).
-  const byPath = new Map();
-  // Paths used so far per folder path, so that names repeated across pages
-  // of one folder still get distinct paths.
-  const taken = new Map();
-  const add = (driveItems, parentPath) => {
-    if (!taken.has(parentPath)) taken.set(parentPath, new Set());
-    const items = toFileSystemItems(driveItems, parentPath, taken.get(parentPath));
-    items.forEach((item, i) => byPath.set(item.path, driveItems[i]));
-    return items;
-  };
-  const current = state.stack[state.stack.length - 1];
+// What one mounted listing knows: the root's manifest items, manifest path →
+// driveItem (for the component's callbacks), the paths used so far per folder
+// path (so names repeated across pages of one folder still get distinct
+// paths), and the number of children each folder had when last listed. Paths
+// are only unique within one listing, so every remount starts afresh (and
+// drops the previous listing's lazy loads).
+let listingData = newListingData();
+
+function newListingData() {
+  return { manifest: [], byPath: new Map(), taken: new Map(), childCounts: new Map() };
+}
+
+// Pass remount = false to keep the mounted listing (its expanded folders,
+// its selection) while its root items change.
+function renderListing(remount = true) {
+  if (remount) {
+    listingKey++;
+    listingData = newListingData();
+    listingData.manifest = addToListing(listingData, state.items, "");
+    state.selectedPath = null;
+    state.folder = null;
+  }
+  const data = listingData;
   const props = {
-    key: ++listingKey,
-    items: add(state.items, ""),
+    key: listingKey,
+    items: data.manifest,
     className: "h-full rounded-lg",
-    title: state.searchQuery ? "Search results" : current ? current.name : "OneDrive",
+    title: state.searchQuery ? `Search results in ${state.searchIn}` : "OneDrive",
     emptyLabel: state.searchQuery ? "No matching files." : "This folder is empty.",
     defaultView: state.view,
     onViewChange: (view) => { state.view = view; },
     dateColumn: "createdAt",
     onSelectionChange: (entry) => {
+      if (data !== listingData) return;
+      state.selectedPath = entry ? entry.path : null;
+      state.folder = entry && entry.kind === "folder" ? { path: entry.path, item: data.byPath.get(entry.path) } : null;
       // Clearing the selection keeps the current preview.
-      if (entry && entry.kind === "file") selectItem(byPath.get(entry.path));
+      if (entry && entry.kind === "file") selectItem(data.byPath.get(entry.path));
+      updateFolderActions();
     },
-    onFileOpen: (file) => selectItem(byPath.get(file.path)),
-    onFolderOpen: (folder) => {
-      // A folder may sit deep in expanded folders: open its whole chain.
-      const chain = [];
-      for (let i = folder.path.indexOf("/"); i !== -1; i = folder.path.indexOf("/", i + 1)) {
-        const item = byPath.get(folder.path.slice(0, i + 1));
-        if (item) chain.push({ id: item.id, name: item.name });
-      }
-      state.stack.push(...chain);
-      loadCurrent();
-    },
+    onFileOpen: (file) => selectItem(data.byPath.get(file.path)),
+    // Replaces the component's own navigation into the folder, which would
+    // make it the listing's root.
+    onFolderOpen: () => {},
     loadChildren: async ({ path, cursor }) => {
-      const folder = byPath.get(path);
+      const folder = data.byPath.get(path);
       try {
         const page = cursor ? await graph.listNextPage(cursor) : await graph.listChildren(folder.id);
-        return { items: add(page.value || [], path), nextCursor: page["@odata.nextLink"] || null };
+        const driveItems = page.value || [];
+        // A first page lists the folder anew (see refreshFolder()).
+        if (!cursor) {
+          data.taken.delete(path);
+          data.childCounts.set(path, 0);
+        }
+        data.childCounts.set(path, data.childCounts.get(path) + driveItems.length);
+        const items = addToListing(data, driveItems, path);
+        if (data === listingData) updateFolderActions();
+        return { items, nextCursor: page["@odata.nextLink"] || null };
       } catch (err) {
         showToast(`Failed to load "${folder.name}": ${err.message || err}`);
         throw err;
@@ -152,46 +173,69 @@ function renderListing() {
   };
   if (listing) listing.render(props);
   else listing = mountFileSystem(els.listing, props);
+  updateFolderActions();
 }
 
-function renderBreadcrumbs() {
-  els.breadcrumbs.replaceChildren();
-  const crumbs = [{ id: null, name: "OneDrive" }, ...state.stack];
-  crumbs.forEach((c, i) => {
-    if (i > 0) {
-      const sep = document.createElement("span");
-      sep.className = "sep";
-      sep.textContent = "›";
-      els.breadcrumbs.appendChild(sep);
-    }
-    if (i === crumbs.length - 1) {
-      const span = document.createElement("span");
-      span.textContent = c.name;
-      els.breadcrumbs.appendChild(span);
-    } else {
-      const link = document.createElement("a");
-      link.className = "crumb";
-      link.textContent = c.name;
-      link.href = "#";
-      link.addEventListener("click", (e) => {
-        e.preventDefault();
-        navigateToDepth(i);
-      });
-      els.breadcrumbs.appendChild(link);
-    }
-  });
+// Maps driveItems of the folder at `parentPath` to the listing's manifest
+// items.
+function addToListing(data, driveItems, parentPath) {
+  if (!data.taken.has(parentPath)) data.taken.set(parentPath, new Set());
+  const items = toFileSystemItems(driveItems, parentPath, data.taken.get(parentPath));
+  items.forEach((item, i) => data.byPath.set(item.path, driveItems[i]));
+  return items;
+}
+
+// Lists a folder of the listing `data` anew after its children changed, and
+// opens it. Failures were already reported by loadChildren.
+async function refreshFolder(path, data = listingData) {
+  if (data !== listingData) return;
+  try {
+    await listing.reloadFolder(path);
+  } catch {}
+}
+
+// A folder's number of items: as listed last, else as its driveItem says.
+function folderItemCount(folder) {
+  return listingData.childCounts.get(folder.path) ?? folder.item.folder?.childCount ?? 0;
+}
+
+// New Folder, Delete Folder and Upload act on the folder selected in the
+// listing, so they're only enabled while there is one (and the listing isn't
+// being replaced). A folder can only be deleted when it is empty: no files,
+// no subfolders. Up selects the selected entry's parent folder.
+function updateFolderActions() {
+  const folder = state.loading ? null : state.folder;
+  els.upBtn.disabled = state.loading || state.selectedPath === null;
+  els.newFolderBtn.disabled = !folder;
+  els.uploadBtn.disabled = !folder;
+  els.deleteFolderBtn.disabled = !folder || folderItemCount(folder) > 0;
+  updateStatus();
+}
+
+// The selected folder's number of items, else the listing's.
+function updateStatus() {
+  if (state.loading) {
+    setStatus("");
+  } else if (state.searchQuery) {
+    setStatus(`${state.items.length} match${state.items.length === 1 ? "" : "es"}`);
+  } else {
+    const n = state.folder ? folderItemCount(state.folder) : listingData.manifest.length;
+    setStatus(`${n} item${n === 1 ? "" : "s"}`);
+  }
 }
 
 function setStatus(text) {
   els.status.textContent = text;
 }
 
-function currentFolderPath() {
-  return "/" + state.stack.map((f) => f.name).join("/");
+// The OneDrive path of the selected folder.
+function folderDrivePath(folder) {
+  return drivePath(folder.path, listingData.byPath);
 }
 
 function openNewFolderDialog() {
-  els.newFolderPath.textContent = currentFolderPath();
+  if (!state.folder) return;
+  els.newFolderPath.textContent = folderDrivePath(state.folder);
   els.newFolderName.value = "";
   els.newFolderCreate.disabled = false;
   els.newFolderDialog.showModal();
@@ -200,11 +244,12 @@ function openNewFolderDialog() {
 
 async function createFolder() {
   const name = els.newFolderName.value.trim();
-  if (!name) return;
-  const folder = state.stack[state.stack.length - 1];
+  const folder = state.folder;
+  if (!name || !folder) return;
+  const data = listingData;
   els.newFolderCreate.disabled = true;
   try {
-    await graph.createFolder(folder ? folder.id : null, name);
+    await graph.createFolder(folder.item.id, name);
   } catch (err) {
     // Close first: a modal <dialog> sits in the top layer and would cover
     // the toast behind its backdrop.
@@ -213,34 +258,26 @@ async function createFolder() {
     return;
   }
   els.newFolderDialog.close();
-  await loadCurrent();
-}
-
-// A folder can only be deleted when it is empty: no files, no subfolders.
-// The root can't be deleted, and while loading or showing search results the
-// listing doesn't reflect the current folder's contents, so stay disabled.
-function updateDeleteFolderBtn() {
-  els.deleteFolderBtn.disabled =
-    state.stack.length === 0 ||
-    state.loading ||
-    !!state.searchQuery ||
-    state.items.length > 0;
+  await refreshFolder(folder.path, data);
 }
 
 function openDeleteFolderDialog() {
-  if (els.deleteFolderBtn.disabled) return;
-  els.deleteFolderPath.textContent = currentFolderPath();
+  if (els.deleteFolderBtn.disabled || !state.folder) return;
+  els.deleteFolderPath.textContent = folderDrivePath(state.folder);
   els.deleteFolderConfirm.disabled = false;
   els.deleteFolderDialog.showModal();
 }
 
+// Once deleted, the folder's parent is selected instead (nothing at the
+// root).
 async function deleteFolder() {
-  const folder = state.stack[state.stack.length - 1];
+  const folder = state.folder;
   if (!folder) return;
-  const path = currentFolderPath();
+  const data = listingData;
+  const path = folderDrivePath(folder);
   els.deleteFolderConfirm.disabled = true;
   try {
-    await graph.deleteEmptyFolder(folder.id);
+    await graph.deleteEmptyFolder(folder.item.id);
   } catch (err) {
     // Close first: a modal <dialog> sits in the top layer and would cover
     // the toast behind its backdrop.
@@ -249,13 +286,23 @@ async function deleteFolder() {
     return;
   }
   els.deleteFolderDialog.close();
-  state.stack.pop();
-  await loadCurrent();
+  if (data !== listingData) return;
+  const parent = parentPath(folder.path);
+  if (parent) {
+    await refreshFolder(parent, data);
+  } else {
+    // The root's items are the listing's own: drop the folder from them.
+    data.manifest = data.manifest.filter((item) => item.path !== folder.path);
+    renderListing(false);
+  }
+  if (data === listingData) listing.select(parent || null);
 }
 
 function openUploadDialog() {
+  if (!state.folder) return;
   state.upload = {
-    folder: state.stack[state.stack.length - 1] || null,
+    folder: state.folder,
+    listing: listingData,
     files: [],
     names: new Map(),
     results: new Map(),
@@ -263,7 +310,7 @@ function openUploadDialog() {
     suggesting: new Set(),
     phase: "select",
   };
-  els.uploadPath.textContent = currentFolderPath();
+  els.uploadPath.textContent = folderDrivePath(state.folder);
   els.uploadInput.value = "";
   els.uploadMessage.textContent = "";
   uploadPreview.clear();
@@ -470,7 +517,7 @@ async function startUpload() {
     while (queue.length) {
       const { file, name } = queue.shift();
       try {
-        await graph.uploadFile(upload.folder ? upload.folder.id : null, file, name);
+        await graph.uploadFile(upload.folder.item.id, file, name);
         upload.results.set(file, { status: "success" });
       } catch (err) {
         upload.results.set(file, { status: "failed", error: errorDump(err) });
@@ -488,7 +535,7 @@ async function startUpload() {
   } else {
     // Chrome lets a repeated Escape bypass the cancel guard; the dialog is
     // already gone, so refresh here instead of on Close.
-    loadCurrent();
+    refreshFolder(upload.folder.path, upload.listing);
   }
 }
 
@@ -498,31 +545,23 @@ function selectItem(item) {
   viewer.open(item);
 }
 
-function navigateToDepth(depth) {
-  // depth 0 = root; trim stack so its length equals depth.
-  state.stack = state.stack.slice(0, depth);
-  loadCurrent();
-}
-
-async function loadCurrent() {
+// Lists the drive's root afresh, leaving any search.
+async function loadRoot() {
   state.searchQuery = "";
+  state.searchFolder = null;
   els.search.value = "";
   state.selectedId = null;
   viewer.clear();
   const id = ++state.loadId;
   state.loading = true;
-  updateDeleteFolderBtn();
+  updateFolderActions();
   els.loading.hidden = false;
-  setStatus("");
-  renderBreadcrumbs();
 
   try {
-    const folder = state.stack[state.stack.length - 1];
-    const items = await listAll(id, graph.listChildren(folder ? folder.id : null));
+    const items = await listAll(id, graph.listChildren(null));
     if (id !== state.loadId) return;
     state.items = items;
     renderListing();
-    setStatus(`${state.items.length} item${state.items.length === 1 ? "" : "s"}`);
   } catch (err) {
     if (id !== state.loadId) return;
     showToast(err.message || "Failed to load folder");
@@ -532,7 +571,7 @@ async function loadCurrent() {
     if (id === state.loadId) {
       els.loading.hidden = true;
       state.loading = false;
-      updateDeleteFolderBtn();
+      updateFolderActions();
     }
   }
 }
@@ -551,36 +590,36 @@ async function listAll(id, firstPage) {
 }
 
 async function runSearch(query) {
+  // The search is limited to the folder selected in the listing when it
+  // started (the whole drive when none is); refining the query keeps that.
+  if (!state.searchQuery) {
+    state.searchFolder = state.folder ? state.folder.item : null;
+    state.searchIn = state.folder ? folderDrivePath(state.folder) : "/";
+  }
   const id = ++state.loadId;
   state.searchQuery = query;
   state.selectedId = null;
   state.loading = true;
-  updateDeleteFolderBtn();
+  updateFolderActions();
   viewer.clear();
   els.loading.hidden = false;
-  setStatus("");
-  // The search is limited to the folder selected in the explorer (the whole
-  // drive at the root).
-  const folder = state.stack[state.stack.length - 1];
-  // Clear breadcrumbs visually to a search view.
-  els.breadcrumbs.replaceChildren(Object.assign(document.createElement("span"), {
-    textContent: `Search in ${currentFolderPath()}: “${query}”`,
-  }));
 
   try {
+    const folder = state.searchFolder;
     const items = await listAll(id, graph.search(query, undefined, folder ? folder.id : null));
     if (id !== state.loadId) return;
     state.items = items;
     renderListing();
-    setStatus(`${state.items.length} match${state.items.length === 1 ? "" : "es"}`);
   } catch (err) {
     if (id !== state.loadId) return;
     showToast(err.message || "Search failed");
+    state.items = [];
+    renderListing();
   } finally {
     if (id === state.loadId) {
       els.loading.hidden = true;
       state.loading = false;
-      updateDeleteFolderBtn();
+      updateFolderActions();
     }
   }
 }
@@ -599,8 +638,7 @@ async function showSignedIn(account) {
   els.user.hidden = false;
   els.user.textContent = account.username || account.name || "";
   setAuthButton(els.authBtn, "OneDrive", true);
-  state.stack = [];
-  await loadCurrent();
+  await loadRoot();
 }
 
 function showSignedOut() {
@@ -691,9 +729,8 @@ function wireEvents() {
   });
   els.cfAuthBtn.addEventListener("click", handleCloudflareAuth);
   els.upBtn.addEventListener("click", () => {
-    if (state.stack.length === 0) return;
-    state.stack.pop();
-    loadCurrent();
+    if (state.selectedPath === null) return;
+    listing.select(parentPath(state.selectedPath) || null);
   });
   els.newFolderBtn.addEventListener("click", openNewFolderDialog);
   els.newFolderCancel.addEventListener("click", () => els.newFolderDialog.close());
@@ -724,12 +761,12 @@ function wireEvents() {
   // listing so the new files show up.
   els.uploadDialog.addEventListener("close", () => {
     uploadPreview.clear();
-    if (state.upload.phase === "done") loadCurrent();
+    if (state.upload.phase === "done") refreshFolder(state.upload.folder.path, state.upload.listing);
   });
   els.search.addEventListener("input", debounce((e) => {
     const q = e.target.value.trim();
     if (q.length === 0) {
-      loadCurrent();
+      loadRoot();
     } else if (q.length >= 2) {
       runSearch(q);
     }

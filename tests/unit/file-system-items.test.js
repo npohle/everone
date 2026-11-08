@@ -4,6 +4,8 @@ import {
   parseReferenceDate,
   displayName,
   toFileSystemItems,
+  parentPath,
+  drivePath,
 } from "../../file-system-items.js";
 
 const file = (id, name, extra = {}) => ({
@@ -115,4 +117,36 @@ test("toFileSystemItems keeps the paths of equal display names apart", () => {
   for (const path of paths) assert.equal(path.replace(/​/g, ""), "Rechnung");
   for (const item of items) assert.equal(item.name, "Rechnung");
   assert.equal(items[0].path, "Rechnung");
+});
+
+test("parentPath is the manifest path of the folder an entry sits in", () => {
+  assert.equal(parentPath("Documents/Post/Brief"), "Documents/Post/");
+  assert.equal(parentPath("Documents/Post/"), "Documents/");
+  assert.equal(parentPath("Documents/"), "");
+  assert.equal(parentPath("notes.txt"), "");
+  assert.equal(parentPath(""), "");
+});
+
+test("drivePath spells out the real names of an entry and the folders above it", () => {
+  const root = { path: "/drive/root:" };
+  const byPath = new Map([
+    ["Documents/", { ...folder("d1", "Documents", 2), parentReference: root }],
+    ["Documents/Rechnung/", { ...folder("d2", "2020-01-01_Rechnung_Telekom", 1), parentReference: { path: "/drive/root:/Documents" } }],
+    ["Documents/Rechnung/Brief", file("f1", "2019-01-02_Brief_Bank.pdf")],
+  ]);
+  assert.equal(drivePath("Documents/", byPath), "/Documents");
+  assert.equal(drivePath("Documents/Rechnung/", byPath), "/Documents/2020-01-01_Rechnung_Telekom");
+  assert.equal(drivePath("Documents/Rechnung/Brief", byPath), "/Documents/2020-01-01_Rechnung_Telekom/2019-01-02_Brief_Bank.pdf");
+  assert.equal(drivePath("", byPath), "/");
+});
+
+test("drivePath starts from the parent path of a search result's topmost entry", () => {
+  const byPath = new Map([
+    ["Rechnungen/", { ...folder("d1", "Rechnungen", 1), parentReference: { path: "/drive/root:/Documents/M%C3%BCller%20GmbH" } }],
+    ["Rechnungen/a.pdf", file("f1", "a.pdf")],
+  ]);
+  assert.equal(drivePath("Rechnungen/a.pdf", byPath), "/Documents/Müller GmbH/Rechnungen/a.pdf");
+  // Without a parentReference (or a path on it) the entry counts as top-level.
+  byPath.set("Rechnungen/", folder("d1", "Rechnungen", 1));
+  assert.equal(drivePath("Rechnungen/", byPath), "/Rechnungen");
 });

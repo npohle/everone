@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { test, expect } from "./fixtures.ts";
-import { listingRow, openFolder } from "./lib/listing.ts";
+import { listingRow, selectFolder } from "./lib/listing.ts";
 import type { Page } from "@playwright/test";
 
 const randomFolderName = () => `e2e-test-${randomBytes(6).toString("hex")}`;
@@ -8,7 +8,7 @@ const randomFolderName = () => `e2e-test-${randomBytes(6).toString("hex")}`;
 async function openDocuments(page: Page) {
   await page.goto(`https://rubisco.io/`);
   await expect(page.getByText("Loading")).not.toBeVisible();
-  await openFolder(page, "Documents");
+  await selectFolder(page, "Documents");
 }
 
 async function createFolderViaUi(page: Page, name: string) {
@@ -39,11 +39,11 @@ async function removeFromDocuments(page: Page, name: string) {
   }, name);
 }
 
-test("DELETE-001: only empty folders can be deleted, and deleting returns to the parent", async ({ page }) => {
+test("DELETE-001: only empty folders can be deleted, and deleting selects the parent", async ({ page }) => {
   const artefactsDir = process.env.ARTEFACTS_DIR;
   const parentName = randomFolderName();
   const childName = randomFolderName();
-  const listing = page.locator("#listing");
+  const status = page.locator("#status");
   const deleteBtn = page.getByRole("button", { name: "Delete Folder" });
   const dialog = page.getByRole("dialog", { name: "Delete Folder" });
 
@@ -52,7 +52,7 @@ test("DELETE-001: only empty folders can be deleted, and deleting returns to the
 
   try {
     await createFolderViaUi(page, parentName);
-    await openFolder(page, parentName);
+    await selectFolder(page, parentName);
     await createFolderViaUi(page, childName);
     await page.screenshot({ path: `${artefactsDir}/06-01-created.png` });
 
@@ -62,8 +62,8 @@ test("DELETE-001: only empty folders can be deleted, and deleting returns to the
     await page.screenshot({ path: `${artefactsDir}/06-02-parent-not-deletable.png` });
 
     // The child is empty, so it can be deleted.
-    await openFolder(page, childName);
-    await expect(listing).toContainText("This folder is empty.");
+    await selectFolder(page, childName);
+    await expect(status).toHaveText("0 items");
     await expect(deleteBtn).toBeEnabled();
     await deleteBtn.click();
     await expect(dialog).toBeVisible();
@@ -72,11 +72,11 @@ test("DELETE-001: only empty folders can be deleted, and deleting returns to the
     await dialog.getByRole("button", { name: "Delete" }).click();
     await expect(dialog).not.toBeVisible();
 
-    // Back in the (now empty, refreshed) parent folder.
-    await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(parentName);
+    // The (now empty, refreshed) parent folder is selected instead.
+    await expect(listingRow(page, parentName)).toHaveAttribute("aria-selected", "true");
     await expect(page.getByText("Loading")).not.toBeVisible();
     await expect(listingRow(page, childName)).toHaveCount(0);
-    await expect(listing).toContainText("This folder is empty.");
+    await expect(status).toHaveText("0 items");
     await page.screenshot({ path: `${artefactsDir}/06-04-child-deleted.png` });
 
     // With the child gone the parent is empty and can be deleted too.
@@ -86,9 +86,11 @@ test("DELETE-001: only empty folders can be deleted, and deleting returns to the
     await dialog.getByRole("button", { name: "Delete" }).click();
     await expect(dialog).not.toBeVisible();
 
-    await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText("Documents");
+    await expect(listingRow(page, "Documents")).toHaveAttribute("aria-selected", "true");
     await expect(page.getByText("Loading")).not.toBeVisible();
     await expect(listingRow(page, parentName)).toHaveCount(0);
+    // Documents isn't empty.
+    await expect(deleteBtn).toBeDisabled();
     await page.screenshot({ path: `${artefactsDir}/06-05-parent-deleted.png` });
   } finally {
     await removeFromDocuments(page, parentName);
@@ -104,7 +106,7 @@ test("DELETE-002: cancelling the Delete Folder dialog keeps the folder", async (
   await openDocuments(page);
   try {
     await createFolderViaUi(page, folderName);
-    await openFolder(page, folderName);
+    await selectFolder(page, folderName);
 
     await deleteBtn.click();
     await expect(dialog).toBeVisible();
@@ -113,10 +115,12 @@ test("DELETE-002: cancelling the Delete Folder dialog keeps the folder", async (
     await expect(dialog).not.toBeVisible();
     await page.screenshot({ path: `${artefactsDir}/06-10-cancelled.png` });
 
-    // Still inside the folder, and it still exists in Documents.
-    await expect(page.locator("#breadcrumbs > span:last-child")).toHaveText(folderName);
-    await page.locator("#breadcrumbs").getByText("Documents", { exact: true }).click();
+    // Still selected, and it still exists in Documents.
+    await expect(listingRow(page, folderName)).toHaveAttribute("aria-selected", "true");
+    await expect(deleteBtn).toBeEnabled();
+    await page.reload();
     await expect(page.getByText("Loading")).not.toBeVisible();
+    await selectFolder(page, "Documents");
     await expect(listingRow(page, folderName)).toBeVisible();
   } finally {
     await removeFromDocuments(page, folderName);
@@ -125,7 +129,7 @@ test("DELETE-002: cancelling the Delete Folder dialog keeps the folder", async (
 
 // The non-empty case is covered by DELETE-001 against a folder it creates
 // itself, since the account's existing folders may or may not be empty.
-test("DELETE-003: the Delete Folder button is visible but disabled at the root", async ({ page }) => {
+test("DELETE-003: the Delete Folder button is visible but disabled while no folder is selected", async ({ page }) => {
   const deleteBtn = page.getByRole("button", { name: "Delete Folder" });
 
   await page.goto(`https://rubisco.io/`);
@@ -146,7 +150,7 @@ test("DELETE-004: a failed delete shows a toast with OneDrive's error", async ({
   await openDocuments(page);
   try {
     await createFolderViaUi(page, folderName);
-    await openFolder(page, folderName);
+    await selectFolder(page, folderName);
     await removeFromDocuments(page, folderName);
 
     await deleteBtn.click();

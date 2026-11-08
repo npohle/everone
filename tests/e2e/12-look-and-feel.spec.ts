@@ -13,6 +13,7 @@ import {
   type ButtonSize,
   type ButtonVariant,
 } from "./lib/extend-ui.ts";
+import { selectFolder } from "./lib/listing.ts";
 
 // The page's own controls (plain HTML, styled by styles.css) are compared
 // with extend-ui's primitives, as rendered by vendor/extend-ui/file-system.css,
@@ -21,11 +22,12 @@ const SCHEMES = ["light", "dark"] as const;
 
 type ButtonSpec = [selector: string, variant: ButtonVariant, size: ButtonSize, attributes?: Record<string, string>];
 
+// Nothing is selected in the listing yet, so the folder actions are disabled.
 const PAGE_BUTTONS: ButtonSpec[] = [
-  ["#up-btn", "outline", "default"],
-  ["#new-folder-btn", "outline", "default"],
+  ["#up-btn", "outline", "default", { disabled: "" }],
+  ["#new-folder-btn", "outline", "default", { disabled: "" }],
   ["#delete-folder-btn", "outline", "default", { disabled: "" }],
-  ["#upload-btn", "outline", "default"],
+  ["#upload-btn", "outline", "default", { disabled: "" }],
   ["#auth-btn", "outline", "sm"],
   ["#cf-auth-btn", "outline", "sm"],
   ["#viewer-scribe", "outline", "sm"],
@@ -84,6 +86,7 @@ for (const scheme of SCHEMES) {
       .poll(() => differencesFromExtendUi(page, "#search", "input", INPUT_CLASS, INPUT_PROPS), { message: "#search" })
       .toEqual({});
 
+    await selectFolder(page, "Documents");
     await page.getByRole("button", { name: "New Folder" }).click();
     await expect(page.getByRole("dialog", { name: "New Folder" })).toBeVisible();
     await expect
@@ -145,6 +148,7 @@ for (const scheme of SCHEMES) {
   test(`LOOK-005: upload list buttons look like extend-ui's icon Button (${scheme})`, async ({ page }) => {
     const artefactsDir = process.env.ARTEFACTS_DIR;
     await page.emulateMedia({ colorScheme: scheme });
+    await selectFolder(page, "Documents");
     await page.getByRole("button", { name: "Upload" }).click();
     await expect(page.getByRole("dialog", { name: "Upload Files" })).toBeVisible();
     // Buttons are inline-flex, but [hidden] ones stay hidden.
