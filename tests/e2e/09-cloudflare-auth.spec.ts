@@ -14,15 +14,23 @@ const groups = (page: Page) => ({
 
 async function expectBothSignedIn(page: Page) {
   const { onedrive, cloudflare } = groups(page);
-  await expect(onedrive.getByRole("button", { name: "Sign out of OneDrive" })).toBeVisible();
-  await expect(cloudflare.getByRole("button", { name: "Sign out of Cloudflare" })).toBeVisible();
+  const onedriveBtn = onedrive.getByRole("button", { name: "Sign out of OneDrive" });
+  const cloudflareBtn = cloudflare.getByRole("button", { name: "Sign out of Cloudflare" });
+  await expect(onedriveBtn).toBeVisible();
+  await expect(cloudflareBtn).toBeVisible();
+  // The green check on each icon marks it signed in.
+  await expect(onedriveBtn.locator(".auth-check")).toBeVisible();
+  await expect(cloudflareBtn.locator(".auth-check")).toBeVisible();
 }
 
 // Signing out of Cloudflare leaves the OneDrive sign-in untouched.
 async function signOutOfCloudflareOnly(page: Page) {
   const { onedrive, cloudflare } = groups(page);
   await cloudflare.getByRole("button", { name: "Sign out of Cloudflare" }).click();
-  await expect(cloudflare.getByRole("button", { name: "Sign in to Cloudflare" })).toBeVisible();
+  const cloudflareBtn = cloudflare.getByRole("button", { name: "Sign in to Cloudflare" });
+  await expect(cloudflareBtn).toBeVisible();
+  await expect(cloudflareBtn.locator(".auth-check")).not.toBeVisible();
+  await expect(cloudflareBtn).toHaveAccessibleDescription("not authenticated");
   await expect(onedrive.getByRole("button", { name: "Sign out of OneDrive" })).toBeVisible();
   await expect(page.locator('#listing [data-slot="file-system"]')).toBeVisible();
 }
@@ -203,15 +211,20 @@ test("CFAUTH-002: Cloudflare token obtained via the code flow is held alongside 
   await expect(page.getByText("Loading")).not.toBeVisible();
   await expectBothSignedIn(page);
 
-  // The header shows the first account's name and ID, fetched with the token.
-  const account = cloudflare.getByTitle(/^.+ \([0-9a-f]{32}\)$/);
+  // Hovering the Cloudflare icon shows the first account's name and ID,
+  // fetched with the token.
+  const cloudflareBtn = cloudflare.getByRole("button", { name: "Sign out of Cloudflare" });
+  const account = cloudflare.getByRole("tooltip");
+  await cloudflareBtn.hover();
   await expect(account).toBeVisible();
+  await expect(account).toHaveText(/^.+ \([0-9a-f]{32}\)$/);
+  await expect(cloudflareBtn).toHaveAccessibleDescription(/^.+ \([0-9a-f]{32}\)$/);
   if (!realToken) {
-    await expect(account).toHaveAttribute("title", "E2E Primary Account (023e105f4ecef8ad9ca31a8372d0c353)");
-    await expect(cloudflare.getByText("E2E Primary Account", { exact: true })).toBeVisible();
-    await expect(cloudflare.getByText("023e105f4ecef8ad9ca31a8372d0c353", { exact: true })).toBeVisible();
-    await expect(cloudflare.getByText("E2E Second Account")).toHaveCount(0);
+    await expect(account).toHaveText("E2E Primary Account (023e105f4ecef8ad9ca31a8372d0c353)");
   }
+  // Only on hover: the header itself shows no account name or ID.
+  await page.mouse.move(0, 0);
+  await expect(account).not.toBeVisible();
   // Compared without printing the token in a failure message.
   expect(accountsRequests.length).toBeGreaterThan(0);
   expect((accountsRequests[0] as { apiToken?: string }).apiToken === cfToken).toBe(true);
@@ -226,10 +239,12 @@ test("CFAUTH-002: Cloudflare token obtained via the code flow is held alongside 
   await page.reload();
   await expect(page.getByText("Loading")).not.toBeVisible();
   await expectBothSignedIn(page);
-  await expect(account).toBeVisible();
+  await cloudflareBtn.hover();
+  await expect(account).toHaveText(/^.+ \([0-9a-f]{32}\)$/);
 
   await signOutOfCloudflareOnly(page);
-  await expect(account).not.toBeVisible();
+  await page.getByRole("group", { name: "Cloudflare account" }).getByRole("button").hover();
+  await expect(account).toHaveText("not authenticated");
   expect(await page.evaluate(() => window.sessionStorage.getItem("cloudflare.token"))).toBeNull();
   await page.screenshot({ path: `${artefactsDir}/09-12-cloudflare-signed-out.png` });
 });

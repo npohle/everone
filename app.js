@@ -14,11 +14,9 @@ const els = {
   configHint: document.getElementById("config-hint"),
   signinCta: document.getElementById("signin-cta"),
   authBtn: document.getElementById("auth-btn"),
-  user: document.getElementById("user"),
+  authTooltip: document.getElementById("auth-tooltip"),
   cfAuthBtn: document.getElementById("cf-auth-btn"),
-  cfAccount: document.getElementById("cf-account"),
-  cfAccountName: document.getElementById("cf-account-name"),
-  cfAccountId: document.getElementById("cf-account-id"),
+  cfAuthTooltip: document.getElementById("cf-auth-tooltip"),
   browser: document.getElementById("browser"),
   listing: document.getElementById("listing"),
   loading: document.getElementById("loading"),
@@ -658,56 +656,49 @@ function debounce(fn, ms) {
 async function showSignedIn(account) {
   els.signedOut.hidden = true;
   els.browser.hidden = false;
-  els.user.hidden = false;
-  els.user.textContent = account.username || account.name || "";
-  setAuthButton(els.authBtn, "OneDrive", true);
+  setAuthButton(els.authBtn, els.authTooltip, "OneDrive", true, account.username || account.name);
   await loadRoot();
 }
 
 function showSignedOut() {
   els.signedOut.hidden = false;
   els.browser.hidden = true;
-  els.user.hidden = true;
-  els.user.textContent = "";
-  setAuthButton(els.authBtn, "OneDrive", false);
+  setAuthButton(els.authBtn, els.authTooltip, "OneDrive", false);
 }
 
-// Header buttons read just "Sign in" / "Sign out" next to their provider's
-// label; the accessible name spells out which sign-in they belong to.
-function setAuthButton(btn, provider, signedIn) {
-  btn.textContent = signedIn ? "Sign out" : "Sign in";
+// Header buttons are just their provider's icon, with a green check once
+// signed in. Their tooltip (also their accessible description) shows the
+// signed-in account, if known (yet). The accessible name spells out what
+// clicking does.
+function setAuthButton(btn, tooltip, provider, signedIn, account = "") {
   btn.setAttribute("aria-label", signedIn ? `Sign out of ${provider}` : `Sign in to ${provider}`);
+  btn.querySelector(".auth-check").hidden = !signedIn;
+  tooltip.textContent = signedIn ? account || "authenticated" : "not authenticated";
 }
 
 // The Cloudflare sign-in is independent of the OneDrive one above: either can
 // be signed in or out without affecting the other.
 //
-// Once signed in, the header also shows the name and ID of the first
+// Once signed in, the button's tooltip shows the name and ID of the first
 // Cloudflare account the user has access to.
 let cfAccountRequest = 0;
 
 function renderCloudflare() {
   const signedIn = cfAuth.isSignedIn();
-  setAuthButton(els.cfAuthBtn, "Cloudflare", signedIn);
-  showCloudflareAccount(null);
+  setAuthButton(els.cfAuthBtn, els.cfAuthTooltip, "Cloudflare", signedIn);
   const request = ++cfAccountRequest;
   if (!signedIn) return;
   cfAuth
     .fetchFirstAccount(cfAuth.getToken())
     .then((account) => {
       // Ignore a response that arrives after a sign-out (or a newer request).
-      if (request === cfAccountRequest && account) showCloudflareAccount(account);
+      if (request === cfAccountRequest && account) {
+        setAuthButton(els.cfAuthBtn, els.cfAuthTooltip, "Cloudflare", true, cfAuth.formatAccount(account));
+      }
     })
     .catch((e) => {
       if (request === cfAccountRequest) showToast(`Couldn't load Cloudflare account: ${e.message || e}`);
     });
-}
-
-function showCloudflareAccount(account) {
-  els.cfAccount.hidden = !account;
-  els.cfAccountName.textContent = account ? account.name : "";
-  els.cfAccountId.textContent = account ? account.id : "";
-  els.cfAccount.title = account ? cfAuth.formatAccount(account) : "";
 }
 
 function handleCloudflareAuth() {
