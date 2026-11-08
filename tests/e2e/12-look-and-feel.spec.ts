@@ -24,8 +24,8 @@ type ButtonSpec = [selector: string, variant: ButtonVariant, size: ButtonSize, a
 
 // New Folder, Delete Folder and Upload are the listing's own (see LOOK-006).
 const PAGE_BUTTONS: ButtonSpec[] = [
-  ["#auth-btn", "outline", "sm"],
-  ["#cf-auth-btn", "outline", "sm"],
+  ["#auth-btn", "outline", "icon-sm"],
+  ["#cf-auth-btn", "outline", "icon-sm"],
   ["#viewer-scribe", "outline", "sm"],
   ["#viewer-extract", "outline", "sm", { disabled: "" }],
   ["#viewer-download", "outline", "sm"],

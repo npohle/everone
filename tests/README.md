@@ -141,7 +141,7 @@ from the Microsoft one and not part of the saved storage state:
   the token as `apiToken`). With `TEST_CF_APITOKEN` set, the token endpoint
   hands out that real API token and the proxy is called for real; otherwise
   the proxy is answered locally (two accounts). Either way the test checks
-  the header shows the first account's name and ID.
+  the Cloudflare button's hover tooltip shows the first account's name and ID.
 
 **Extract** (`tests/e2e/10-extract.spec.ts`) signs in to Cloudflare by
 seeding `cloudflare.token` in sessionStorage with `TEST_CF_APITOKEN`, then
