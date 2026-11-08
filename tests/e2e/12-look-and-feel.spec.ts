@@ -24,7 +24,6 @@ type ButtonSpec = [selector: string, variant: ButtonVariant, size: ButtonSize, a
 
 // Nothing is selected in the listing yet, so the folder actions are disabled.
 const PAGE_BUTTONS: ButtonSpec[] = [
-  ["#up-btn", "outline", "default", { disabled: "" }],
   ["#new-folder-btn", "outline", "default", { disabled: "" }],
   ["#delete-folder-btn", "outline", "default", { disabled: "" }],
   ["#upload-btn", "outline", "default", { disabled: "" }],

@@ -67,6 +67,10 @@ change since is marked with an `EverOne patch` comment:
   `mountFileSystem` returns) — `reloadFolder(path)` fetches a folder's
   children anew after they changed (and opens the folder), `select(path)`
   selects an entry (opening the folders above it).
+* **No navigation, view switcher or title in the header.** The Back /
+  Forward buttons, the current folder's name (and so the `title` prop) and
+  the view switcher (and so `onViewChange`) are gone; the header keeps sort,
+  filter and search. The view is set by the host (`defaultView` / `view`).
 * **`dateColumn`** — `"createdAt"` makes the list view's date column "Date
   Created" (sorting by it); default `"updatedAt"` ("Date Modified").
 * **`emptyLabel`** — the empty-folder message.

@@ -23,7 +23,6 @@ const els = {
   listing: document.getElementById("listing"),
   loading: document.getElementById("loading"),
   status: document.getElementById("status"),
-  upBtn: document.getElementById("up-btn"),
   search: document.getElementById("search"),
   toast: document.getElementById("toast"),
   newFolderBtn: document.getElementById("new-folder-btn"),
@@ -55,23 +54,19 @@ const els = {
 const state = {
   // The drive root's items (or the search results) the listing starts from.
   items: [],
-  // The listing's view; kept when the listing is rebuilt for a search.
-  view: "list",
   searchQuery: "",
-  // The folder driveItem a search is limited to (null for the whole drive),
-  // and its OneDrive path: the folder selected when the search started.
+  // The folder driveItem a search is limited to (null for the whole drive):
+  // the folder selected when the search started.
   searchFolder: null,
-  searchIn: "/",
   // Monotonic id; pending requests with stale ids are discarded.
   loadId: 0,
   // Currently selected file id (the one being previewed).
   selectedId: null,
   // True while the root listing or a search request is in flight.
   loading: false,
-  // The listing's selected entry (its manifest path), and the folder New
-  // Folder, Delete Folder and Upload act on: that entry, when it's a folder,
-  // as { path, item } (item being its driveItem).
-  selectedPath: null,
+  // The folder New Folder, Delete Folder and Upload act on: the listing's
+  // selected entry, when it's a folder, as { path, item } (item being its
+  // driveItem).
   folder: null,
   // Upload dialog: target folder ({ path, item }) and the listing it is in, picked files, the name each file is
   // uploaded as and its result (both keyed by File), and the file shown in
@@ -126,7 +121,6 @@ function renderListing(remount = true) {
     listingKey++;
     listingData = newListingData();
     listingData.manifest = addToListing(listingData, state.items, "");
-    state.selectedPath = null;
     state.folder = null;
   }
   const data = listingData;
@@ -134,14 +128,11 @@ function renderListing(remount = true) {
     key: listingKey,
     items: data.manifest,
     className: "h-full rounded-lg",
-    title: state.searchQuery ? `Search results in ${state.searchIn}` : "OneDrive",
     emptyLabel: state.searchQuery ? "No matching files." : "This folder is empty.",
-    defaultView: state.view,
-    onViewChange: (view) => { state.view = view; },
+    defaultView: "list",
     dateColumn: "createdAt",
     onSelectionChange: (entry) => {
       if (data !== listingData) return;
-      state.selectedPath = entry ? entry.path : null;
       state.folder = entry && entry.kind === "folder" ? { path: entry.path, item: data.byPath.get(entry.path) } : null;
       // Clearing the selection keeps the current preview.
       if (entry && entry.kind === "file") selectItem(data.byPath.get(entry.path));
@@ -202,10 +193,9 @@ function folderItemCount(folder) {
 // New Folder, Delete Folder and Upload act on the folder selected in the
 // listing, so they're only enabled while there is one (and the listing isn't
 // being replaced). A folder can only be deleted when it is empty: no files,
-// no subfolders. Up selects the selected entry's parent folder.
+// no subfolders.
 function updateFolderActions() {
   const folder = state.loading ? null : state.folder;
-  els.upBtn.disabled = state.loading || state.selectedPath === null;
   els.newFolderBtn.disabled = !folder;
   els.uploadBtn.disabled = !folder;
   els.deleteFolderBtn.disabled = !folder || folderItemCount(folder) > 0;
@@ -594,7 +584,6 @@ async function runSearch(query) {
   // started (the whole drive when none is); refining the query keeps that.
   if (!state.searchQuery) {
     state.searchFolder = state.folder ? state.folder.item : null;
-    state.searchIn = state.folder ? folderDrivePath(state.folder) : "/";
   }
   const id = ++state.loadId;
   state.searchQuery = query;
@@ -728,10 +717,6 @@ function wireEvents() {
     else handleSignIn();
   });
   els.cfAuthBtn.addEventListener("click", handleCloudflareAuth);
-  els.upBtn.addEventListener("click", () => {
-    if (state.selectedPath === null) return;
-    listing.select(parentPath(state.selectedPath) || null);
-  });
   els.newFolderBtn.addEventListener("click", openNewFolderDialog);
   els.newFolderCancel.addEventListener("click", () => els.newFolderDialog.close());
   els.newFolderForm.addEventListener("submit", (e) => {
