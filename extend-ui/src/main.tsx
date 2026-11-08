@@ -12,6 +12,8 @@ import {
 import "./styles.css"
 
 export type {
+  FileSystemAction,
+  FileSystemActionIcon,
   FileSystemController,
   FileSystemFileItem,
   FileSystemFolderItem,

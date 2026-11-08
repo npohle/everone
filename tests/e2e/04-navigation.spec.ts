@@ -111,3 +111,42 @@ test("NAV-002: the folder selected in the listing is the one the toolbar acts on
     await removeFromDocuments(page, folderName);
   }
 });
+
+test("NAV-003: New Folder, Delete Folder and Upload are in the listing's header, not the page toolbar", async ({ page }) => {
+  const artefactsDir = process.env.ARTEFACTS_DIR;
+  const listing = page.locator("#listing");
+  const names = ["New Folder", "Delete Folder", "Upload"];
+
+  await page.goto(`https://rubisco.io/`);
+  await expect(page.getByText("Loading")).not.toBeVisible();
+  await expect(listingRow(page, "Documents")).toBeVisible();
+
+  await expect(page.locator(".toolbar").getByRole("button")).toHaveCount(0);
+  for (const id of ["#new-folder-btn", "#delete-folder-btn", "#upload-btn"]) {
+    await expect(page.locator(id)).toHaveCount(0);
+  }
+  // At desktop width they're buttons of their own, left of sort, filter and
+  // search; the Tools menu is only for narrow listings.
+  const sortBox = (await listing.getByRole("combobox", { name: "Sort by" }).boundingBox())!;
+  for (const name of names) {
+    const button = listing.getByRole("button", { name, exact: true });
+    await expect(button).toBeVisible();
+    await expect(button).toBeInViewport({ ratio: 1 });
+    const box = (await button.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(sortBox.x);
+    expect(Math.abs(box.y + box.height / 2 - (sortBox.y + sortBox.height / 2))).toBeLessThanOrEqual(1);
+  }
+  await expect(listing.getByRole("button", { name: "Tools" })).toHaveCount(0);
+  await page.screenshot({ path: `${artefactsDir}/04-20-listing-actions.png` });
+
+  // The ones that act on a folder are enabled once one is selected.
+  await selectFolder(page, "Documents");
+  await expect(listing.getByRole("button", { name: "New Folder" })).toBeEnabled();
+  await expect(listing.getByRole("button", { name: "Upload", exact: true })).toBeEnabled();
+  await listing.getByRole("button", { name: "New Folder" }).click();
+  const dialog = page.getByRole("dialog", { name: "New Folder" });
+  await expect(dialog).toBeVisible();
+  await expect(page.locator("#new-folder-path")).toHaveText("/Documents");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).not.toBeVisible();
+});

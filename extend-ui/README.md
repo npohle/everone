@@ -71,6 +71,13 @@ change since is marked with an `EverOne patch` comment:
   Forward buttons, the current folder's name (and so the `title` prop) and
   the view switcher (and so `onViewChange`) are gone; the header keeps sort,
   filter and search. The view is set by the host (`defaultView` / `view`).
+* **`actions`** (`FileSystemAction[]`) — the host's buttons at the left of
+  the header (EverOne's New Folder, Delete Folder and Upload): `id` (the
+  button's `data-action`), `label`, `title`, `icon` (`"folderPlus"`,
+  `"folderMinus"` or `"upload"`), `disabled` and `onSelect`. They're styled
+  like the sort select's trigger. Below 520px of width they collapse into a
+  "Tools" menu, and below iPad width they take the inline search's room (it
+  collapses into its popover, as below 560px).
 * **`dateColumn`** — `"createdAt"` makes the list view's date column "Date
   Created" (sorting by it); default `"updatedAt"` ("Date Modified").
 * **`emptyLabel`** — the empty-folder message.
