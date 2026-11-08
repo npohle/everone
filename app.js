@@ -25,20 +25,17 @@ const els = {
   status: document.getElementById("status"),
   search: document.getElementById("search"),
   toast: document.getElementById("toast"),
-  newFolderBtn: document.getElementById("new-folder-btn"),
   newFolderDialog: document.getElementById("new-folder-dialog"),
   newFolderForm: document.getElementById("new-folder-form"),
   newFolderPath: document.getElementById("new-folder-path"),
   newFolderName: document.getElementById("new-folder-name"),
   newFolderCancel: document.getElementById("new-folder-cancel"),
   newFolderCreate: document.getElementById("new-folder-create"),
-  deleteFolderBtn: document.getElementById("delete-folder-btn"),
   deleteFolderDialog: document.getElementById("delete-folder-dialog"),
   deleteFolderForm: document.getElementById("delete-folder-form"),
   deleteFolderPath: document.getElementById("delete-folder-path"),
   deleteFolderCancel: document.getElementById("delete-folder-cancel"),
   deleteFolderConfirm: document.getElementById("delete-folder-confirm"),
-  uploadBtn: document.getElementById("upload-btn"),
   uploadDialog: document.getElementById("upload-dialog"),
   uploadForm: document.getElementById("upload-form"),
   uploadPath: document.getElementById("upload-path"),
@@ -97,10 +94,12 @@ function errorDump(err) {
 // list view: the drive root's (or a search's) items, with folders that load
 // their children when they're expanded. Rows show each name split into
 // display name and reference date (file-system-items.js); clicking a file
-// previews it, selecting a folder makes it the one the toolbar acts on. The
-// listing never navigates: its root stays the drive's.
+// previews it, selecting a folder makes it the one the buttons in its header
+// act on. The listing never navigates: its root stays the drive's.
 let listing = null;
 let listingKey = 0;
+// The listing's props, but for its actions (see updateFolderActions()).
+let listingProps = null;
 
 // What one mounted listing knows: the root's manifest items, manifest path →
 // driveItem (for the component's callbacks), the paths used so far per folder
@@ -162,8 +161,7 @@ function renderListing(remount = true) {
       }
     },
   };
-  if (listing) listing.render(props);
-  else listing = mountFileSystem(els.listing, props);
+  listingProps = props;
   updateFolderActions();
 }
 
@@ -190,16 +188,52 @@ function folderItemCount(folder) {
   return listingData.childCounts.get(folder.path) ?? folder.item.folder?.childCount ?? 0;
 }
 
-// New Folder, Delete Folder and Upload act on the folder selected in the
+// New Folder, Delete Folder and Upload are buttons in the listing's header
+// (a "Tools" menu when it is narrow). They act on the folder selected in the
 // listing, so they're only enabled while there is one (and the listing isn't
 // being replaced). A folder can only be deleted when it is empty: no files,
 // no subfolders.
 function updateFolderActions() {
-  const folder = state.loading ? null : state.folder;
-  els.newFolderBtn.disabled = !folder;
-  els.uploadBtn.disabled = !folder;
-  els.deleteFolderBtn.disabled = !folder || folderItemCount(folder) > 0;
+  if (listingProps) {
+    const props = { ...listingProps, actions: folderActions() };
+    if (listing) listing.render(props);
+    else listing = mountFileSystem(els.listing, props);
+  }
   updateStatus();
+}
+
+function folderActions() {
+  const folder = state.loading ? null : state.folder;
+  return [
+    {
+      id: "new-folder",
+      label: "New Folder",
+      title: "Create a folder in the selected folder",
+      icon: "folderPlus",
+      disabled: !folder,
+      onSelect: openNewFolderDialog,
+    },
+    {
+      id: "delete-folder",
+      label: "Delete Folder",
+      title: "Delete the selected folder (only when empty)",
+      icon: "folderMinus",
+      disabled: !canDeleteFolder(folder),
+      onSelect: openDeleteFolderDialog,
+    },
+    {
+      id: "upload",
+      label: "Upload",
+      title: "Upload files into the selected folder",
+      icon: "upload",
+      disabled: !folder,
+      onSelect: openUploadDialog,
+    },
+  ];
+}
+
+function canDeleteFolder(folder) {
+  return !!folder && folderItemCount(folder) === 0;
 }
 
 // The selected folder's number of items, else the listing's.
@@ -252,7 +286,7 @@ async function createFolder() {
 }
 
 function openDeleteFolderDialog() {
-  if (els.deleteFolderBtn.disabled || !state.folder) return;
+  if (state.loading || !canDeleteFolder(state.folder)) return;
   els.deleteFolderPath.textContent = folderDrivePath(state.folder);
   els.deleteFolderConfirm.disabled = false;
   els.deleteFolderDialog.showModal();
@@ -717,19 +751,16 @@ function wireEvents() {
     else handleSignIn();
   });
   els.cfAuthBtn.addEventListener("click", handleCloudflareAuth);
-  els.newFolderBtn.addEventListener("click", openNewFolderDialog);
   els.newFolderCancel.addEventListener("click", () => els.newFolderDialog.close());
   els.newFolderForm.addEventListener("submit", (e) => {
     e.preventDefault();
     createFolder();
   });
-  els.deleteFolderBtn.addEventListener("click", openDeleteFolderDialog);
   els.deleteFolderCancel.addEventListener("click", () => els.deleteFolderDialog.close());
   els.deleteFolderForm.addEventListener("submit", (e) => {
     e.preventDefault();
     deleteFolder();
   });
-  els.uploadBtn.addEventListener("click", openUploadDialog);
   els.uploadSelect.addEventListener("click", () => els.uploadInput.click());
   els.uploadInput.addEventListener("change", () => addUploadFiles(els.uploadInput.files));
   els.uploadCancel.addEventListener("click", () => els.uploadDialog.close());

@@ -159,6 +159,9 @@ row decoration's `title`), and `selectFolder`, which clicks a folder so it is
 selected and expanded with its children loaded. The listing never navigates
 (its root stays the drive's): New Folder, Delete Folder and Upload act on the
 selected folder and are disabled while none is (`04-navigation.spec.ts`).
+They are buttons in the listing's header, styled like its sort select
+(`12-look-and-feel.spec.ts`), that collapse into a "Tools" menu when the
+listing is narrow, as on a phone (`13-mobile-layout.spec.ts`).
 `tests/e2e/11-listing.spec.ts` covers the list view itself: name /
 date split, lazy loading of subfolders, and listing every page of a folder
 (by rewriting Graph's `$top` to 2 with `page.route`).

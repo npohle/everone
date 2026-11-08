@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures.ts";
-import { listingRows } from "./lib/listing.ts";
+import { listingRows, selectFolder } from "./lib/listing.ts";
 import type { Locator, Page } from "@playwright/test";
 
 // A phone-sized viewport: narrow enough for styles.css to stack the preview
@@ -56,4 +56,61 @@ test("MOBILE-002: the page scrolls to the preview, which keeps its minimum heigh
   await page.evaluate(() => window.scrollTo(0, document.scrollingElement!.scrollHeight));
   await expect(preview.locator(".viewer-bar")).toBeInViewport();
   await page.screenshot({ path: `${artefactsDir}/13-01-phone-scrolled.png` });
+});
+
+test("MOBILE-003: New Folder, Delete Folder and Upload collapse into a Tools menu", async ({ page }) => {
+  const artefactsDir = process.env.ARTEFACTS_DIR;
+  const listing = page.locator("#listing");
+  const menuItem = (name: string) => page.getByRole("menuitem", { name, exact: true });
+  const tools = listing.getByRole("button", { name: "Tools" });
+
+  await openOnPhone(page);
+  await expect(tools).toBeVisible();
+  // Next to sort, filter and search, all in the listing's header.
+  await expect(tools).toBeInViewport({ ratio: 1 });
+  await expect(listing.getByRole("combobox", { name: "Sort by" })).toBeInViewport({ ratio: 1 });
+  await expect(listing.getByRole("button", { name: "Search" })).toBeInViewport({ ratio: 1 });
+  for (const name of ["New Folder", "Delete Folder", "Upload"]) {
+    await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
+  }
+
+  // Nothing selected yet: there's no folder to act on.
+  await tools.click();
+  for (const name of ["New Folder", "Delete Folder", "Upload"]) {
+    await expect(menuItem(name)).toBeVisible();
+    await expect(menuItem(name)).toHaveAttribute("aria-disabled", "true");
+  }
+  await page.screenshot({ path: `${artefactsDir}/13-02-tools-nothing-selected.png` });
+  await page.keyboard.press("Escape");
+  await expect(menuItem("New Folder")).toHaveCount(0);
+
+  // Documents isn't empty, so it can't be deleted.
+  await selectFolder(page, "Documents");
+  await tools.click();
+  await expect(menuItem("New Folder")).not.toHaveAttribute("aria-disabled", "true");
+  await expect(menuItem("Upload")).not.toHaveAttribute("aria-disabled", "true");
+  await expect(menuItem("Delete Folder")).toHaveAttribute("aria-disabled", "true");
+  await page.screenshot({ path: `${artefactsDir}/13-03-tools-folder-selected.png` });
+
+  // Picking an entry closes the menu and opens its dialog, which keeps the
+  // focus.
+  await menuItem("New Folder").click();
+  await expect(menuItem("New Folder")).toHaveCount(0);
+  const newFolder = page.getByRole("dialog", { name: "New Folder" });
+  await expect(newFolder).toBeVisible();
+  await expect(page.locator("#new-folder-path")).toHaveText("/Documents");
+  await expect(page.locator("#new-folder-name")).toBeFocused();
+  await page.locator("#new-folder-name").fill("typed");
+  await expect(page.locator("#new-folder-name")).toHaveValue("typed");
+  await page.screenshot({ path: `${artefactsDir}/13-04-tools-new-folder.png` });
+  await newFolder.getByRole("button", { name: "Cancel" }).click();
+  await expect(newFolder).not.toBeVisible();
+
+  await tools.click();
+  await menuItem("Upload").click();
+  const upload = page.getByRole("dialog", { name: "Upload Files" });
+  await expect(upload).toBeVisible();
+  await expect(page.locator("#upload-path")).toHaveText("/Documents");
+  await upload.getByRole("button", { name: "Cancel" }).click();
+  await expect(upload).not.toBeVisible();
 });

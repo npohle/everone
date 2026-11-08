@@ -22,11 +22,8 @@ const SCHEMES = ["light", "dark"] as const;
 
 type ButtonSpec = [selector: string, variant: ButtonVariant, size: ButtonSize, attributes?: Record<string, string>];
 
-// Nothing is selected in the listing yet, so the folder actions are disabled.
+// New Folder, Delete Folder and Upload are the listing's own (see LOOK-006).
 const PAGE_BUTTONS: ButtonSpec[] = [
-  ["#new-folder-btn", "outline", "default", { disabled: "" }],
-  ["#delete-folder-btn", "outline", "default", { disabled: "" }],
-  ["#upload-btn", "outline", "default", { disabled: "" }],
   ["#auth-btn", "outline", "sm"],
   ["#cf-auth-btn", "outline", "sm"],
   ["#viewer-scribe", "outline", "sm"],
@@ -170,5 +167,44 @@ for (const scheme of SCHEMES) {
     }
     await expectButtonsLikeExtendUi(page, [["#upload-start", "default", "default"]]);
     await page.screenshot({ path: `${artefactsDir}/12-05-upload-list-${scheme}.png` });
+  });
+
+  test(`LOOK-006: the listing's folder buttons look like its sort select (${scheme})`, async ({ page }) => {
+    const artefactsDir = process.env.ARTEFACTS_DIR;
+    await page.emulateMedia({ colorScheme: scheme });
+    const listing = page.locator("#listing");
+    // Documents isn't empty: New Folder and Upload are enabled, Delete
+    // Folder is disabled (and so dimmed, unlike the sort select).
+    await selectFolder(page, "Documents");
+    const props = [
+      "height",
+      "border-top-width",
+      "border-top-color",
+      "border-radius",
+      "background-color",
+      "box-shadow",
+      "color",
+      "font-family",
+      "font-size",
+      "font-weight",
+      "line-height",
+    ];
+    const styles = (selector: string) =>
+      listing.locator(selector).first().evaluate((el, props) => {
+        const s = getComputedStyle(el);
+        return Object.fromEntries(props.map((p) => [p, s.getPropertyValue(p)]));
+      }, props);
+    // Moves the mouse away, so no hover styles apply.
+    await page.mouse.move(0, 0);
+    for (const action of ["new-folder", "delete-folder", "upload"]) {
+      await expect
+        .poll(async () => {
+          const [button, sort] = [await styles(`button[data-action="${action}"]`), await styles('[aria-label="Sort by"]')];
+          return Object.keys(sort).filter((p) => button[p] !== sort[p]).map((p) => `${p}: ${button[p]} != ${sort[p]}`);
+        }, { message: `${action} looks like the sort select` })
+        .toEqual([]);
+    }
+    await expect(listing.getByRole("button", { name: "Delete Folder" })).toHaveCSS("opacity", "0.5");
+    await listing.locator("[data-slot=file-system-header]").screenshot({ path: `${artefactsDir}/12-06-listing-header-${scheme}.png` });
   });
 }

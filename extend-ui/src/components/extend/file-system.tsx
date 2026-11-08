@@ -57,7 +57,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { FileThumbnail } from "@/components/extend/file-thumbnail"
-import { ChevronDown, ChevronUp, Calendar, FileArchiveIcon, ChevronLeft, ArrowRight, X, Search, ArrowUpDown, Check, Filter, LoaderCircle } from "lucide-react"
+import { ChevronDown, ChevronUp, Calendar, FileArchiveIcon, ChevronLeft, ArrowRight, X, Search, ArrowUpDown, Check, Filter, LoaderCircle, FolderMinus, FolderPlus, Upload, Wrench } from "lucide-react"
 
 function ArrowDown01Glyph(props: InlineRegistryIconProps) {
   return (
@@ -179,6 +179,22 @@ export type FileSystemController = {
    */
   select(path: string | null): void
 }
+/** EverOne patch: the icons a FileSystemAction can show. */
+export type FileSystemActionIcon = "folderPlus" | "folderMinus" | "upload"
+/**
+ * EverOne patch: a button of the host's in the header (see
+ * FileSystemProps.actions).
+ */
+export type FileSystemAction = {
+  /** Unique among the actions; the button's `data-action`. */
+  id: string
+  label: string
+  /** Tooltip. */
+  title?: string
+  icon?: FileSystemActionIcon
+  disabled?: boolean
+  onSelect: () => void
+}
 export type FileSystemProps = {
   /** Flat manifest. Folders are optional; missing prefixes are inferred from file paths. */
   items: FileSystemItem[]
@@ -213,6 +229,12 @@ export type FileSystemProps = {
   dateColumn?: FileSystemDateColumn
   /** EverOne patch: shown when the folder has no items. */
   emptyLabel?: string
+  /**
+   * EverOne patch: buttons shown at the left of the header, styled like the
+   * sort select. When the component is narrow they collapse into a "Tools"
+   * menu.
+   */
+  actions?: FileSystemAction[]
   /** Resolve a URL (e.g. presigned) for a file without one. */
   getFileUrl?: (file: FileSystemFileItem) => string | Promise<string>
   /** Lazily fetch children for folders with `hasChildren` and no loaded entries. */
@@ -1265,6 +1287,7 @@ export function FileSystem({
   onFileOpen,
   onFolderOpen,
   dateColumn = "updatedAt",
+  actions,
   emptyLabel = "This folder is empty",
   getFileUrl,
   loadChildren,
@@ -1528,12 +1551,14 @@ export function FileSystem({
     []
   )
   // Below iPad width the sort select drops its label; below 560px the search
-  // input collapses into a popover.
+  // input collapses into a popover. EverOne patch: below ACTIONS_MIN_WIDTH
+  // the host's actions collapse into a "Tools" menu.
   const rootRef = React.useRef<HTMLDivElement | null>(null)
   const [headerLayout, setHeaderLayout] = React.useState<
     "full" | "compact" | "minimal"
   >("full")
   const [isBelowIpadWidth, setIsBelowIpadWidth] = React.useState(false)
+  const [areActionsCollapsed, setAreActionsCollapsed] = React.useState(false)
   React.useEffect(() => {
     const root = rootRef.current
     if (!root || typeof ResizeObserver === "undefined") return
@@ -1543,6 +1568,7 @@ export function FileSystem({
         width < 360 ? "minimal" : width < 560 ? "compact" : "full"
       )
       setIsBelowIpadWidth(width < IPAD_MIN_WIDTH)
+      setAreActionsCollapsed(width < ACTIONS_MIN_WIDTH)
     }
     const observer = new ResizeObserver((observerEntries) =>
       applyWidth(observerEntries[0]?.contentRect.width)
@@ -1935,9 +1961,19 @@ export function FileSystem({
     >
       <FileSystemIconSpriteSheet />
       {/* EverOne patch: the header has no Back / Forward buttons, folder
-          title or view switcher, only sort, filter and search. */}
-      <div className="flex h-12 shrink-0 items-center justify-end gap-2 border-b bg-muted/40 px-2">
-        <div className="flex min-w-0 items-center justify-end gap-1">
+          title or view switcher, only the host's actions at the left and
+          sort, filter and search at the right. */}
+      <div
+        data-slot="file-system-header"
+        className="flex h-12 shrink-0 items-center justify-between gap-2 border-b bg-muted/40 px-2"
+      >
+        {actions?.length ? (
+          <FileSystemActions
+            actions={actions}
+            isCollapsed={areActionsCollapsed}
+          />
+        ) : null}
+        <div className="ml-auto flex min-w-0 items-center justify-end gap-1">
           <FileSystemSortSelect
             layout={headerLayout}
             onKeyChange={applySortKey}
@@ -1954,7 +1990,13 @@ export function FileSystem({
           <FileSystemSearchField
             inputRef={searchInputRef}
             isExpanded={isSearchExpanded}
-            layout={headerLayout}
+            // EverOne patch: the host's actions take the room of the
+            // inline search below iPad width.
+            layout={
+              actions?.length && isBelowIpadWidth && headerLayout === "full"
+                ? "compact"
+                : headerLayout
+            }
             onExpandedChange={setIsSearchExpanded}
             onValueChange={setSearchInput}
             value={searchInput}
@@ -2132,6 +2174,102 @@ export function FileSystem({
         />
       ) : null}
     </div>
+  )
+}
+// EverOne patch: the host's actions (FileSystemProps.actions). Outline
+// buttons styled like the sort select's trigger, or, when the component is
+// narrow, a "Tools" menu holding them.
+const ACTIONS_MIN_WIDTH = 520
+const ACTION_ICONS: Record<
+  FileSystemActionIcon,
+  React.ComponentType<{ className?: string }>
+> = {
+  folderPlus: FolderPlus,
+  folderMinus: FolderMinus,
+  upload: Upload,
+}
+// The sort select's trigger: its height (32px, Button's sm), padding,
+// border, background and font.
+const ACTION_BUTTON_CLASSNAME =
+  "gap-1.5 border-input bg-transparent px-3 font-normal shadow-xs has-[>svg]:px-3 [&_svg:not([class*='text-'])]:text-muted-foreground"
+function FileSystemActionIconGlyph({ action }: { action: FileSystemAction }) {
+  const Icon = action.icon ? ACTION_ICONS[action.icon] : null
+  return Icon ? <Icon className="size-4" /> : null
+}
+function FileSystemActions({
+  actions,
+  isCollapsed,
+}: {
+  actions: FileSystemAction[]
+  isCollapsed: boolean
+}) {
+  // A menu entry's action runs once the menu has closed and given up the
+  // focus, so a dialog it opens keeps the focus.
+  const pendingActionRef = React.useRef<FileSystemAction | null>(null)
+  if (!isCollapsed) {
+    return (
+      <div className="flex shrink-0 items-center gap-1">
+        {actions.map((action) => (
+          <Button
+            key={action.id}
+            type="button"
+            variant="outline"
+            size="sm"
+            data-action={action.id}
+            title={action.title}
+            disabled={action.disabled}
+            onClick={action.onSelect}
+            className={ACTION_BUTTON_CLASSNAME}
+          >
+            <FileSystemActionIconGlyph action={action} />
+            {action.label}
+          </Button>
+        ))}
+      </div>
+    )
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          title="Tools"
+          className={ACTION_BUTTON_CLASSNAME}
+        >
+          <Wrench className="size-4" />
+          Tools
+          <ChevronDown className="size-4 opacity-50" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="min-w-44"
+        onCloseAutoFocus={(event) => {
+          const action = pendingActionRef.current
+          if (!action) return
+          pendingActionRef.current = null
+          event.preventDefault()
+          action.onSelect()
+        }}
+      >
+        {actions.map((action) => (
+          <DropdownMenuItem
+            key={action.id}
+            data-action={action.id}
+            title={action.title}
+            disabled={action.disabled}
+            onSelect={() => {
+              pendingActionRef.current = action
+            }}
+          >
+            <FileSystemActionIconGlyph action={action} />
+            {action.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 // Shared style for the ghost icon buttons in the toolbar.
