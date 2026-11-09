@@ -633,7 +633,7 @@ async function runSearch(query) {
 
   try {
     const folder = state.searchFolder;
-    const items = await listAll(() => id !== state.loadId, graph.search(query, undefined, folder ? folder.id : null));
+    const items = (await graph.search(query, undefined, folder ? folder.id : null)).value || [];
     if (id !== state.loadId) return;
     state.items = items;
     renderListing();
@@ -696,7 +696,7 @@ async function runListingSearch(query) {
 
   try {
     const { folder } = search;
-    const found = await listAll(isStale, graph.search(query, undefined, folder ? folder.id : null));
+    const found = (await graph.search(query, undefined, folder ? folder.id : null)).value || [];
     if (isStale()) return;
     // OneDrive's paths rule out most of what's elsewhere (personal drives
     // search the whole drive, folder or not); the folders above the rest

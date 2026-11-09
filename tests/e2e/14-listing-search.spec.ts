@@ -186,3 +186,37 @@ test("LISTING-SEARCH-003: a real search shows nothing from outside the selected 
   }
   await page.screenshot({ path: `${artefactsDir}/14-20-real-search.png` });
 });
+
+// Graph's search can't page on personal OneDrive: following its
+// @odata.nextLink fails with "500 Error Calling Substrate Search". The test
+// account's drive is too small for a search to need a second page, so the
+// search request goes out asking for one hit per page; Graph then answers
+// "OneDrive" (which finds "Getting started with OneDrive.pdf" and many of
+// the drive's folders) with a nextLink, like it would a broad query on a
+// bigger drive. The search shows what the page holds, without an error.
+test("LISTING-SEARCH-004: a search with more hits than fit in a page shows them without an error", async ({ page }) => {
+  const artefactsDir = process.env.ARTEFACTS_DIR;
+  const query = "OneDrive";
+
+  await openRoot(page);
+  const requests: string[] = [];
+  const pages: Array<{ value: DriveItem[]; "@odata.nextLink"?: string }> = [];
+  await page.route(SEARCH_REQUEST, async (route) => {
+    const url = new URL(route.request().url());
+    requests.push(url.href);
+    if (!url.searchParams.has("$skiptoken")) url.searchParams.set("$top", "1");
+    const response = await route.fetch({ url: url.href });
+    if (response.ok()) pages.push(await response.json());
+    await route.fulfill({ response });
+  });
+
+  await searchListing(page, query);
+  expect(pages[0]["@odata.nextLink"]).toContain("$skiptoken=");
+  const files = pages[0].value.filter((item) => item.file);
+  expect(files.length).toBeGreaterThan(0);
+  for (const file of files) await expect(listingRow(page, displayName(file.name))).toBeVisible();
+  await expect(listingFiles(page)).toHaveCount(files.length);
+  await expect(page.locator("#toast")).toBeHidden();
+  expect(requests).toHaveLength(1);
+  await page.screenshot({ path: `${artefactsDir}/14-30-paged-search.png` });
+});
