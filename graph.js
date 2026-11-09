@@ -156,13 +156,20 @@ export async function uploadFile(parentId, file, name = file.name) {
   }
 }
 
+// Graph's search can't page on personal OneDrive: any page after the first
+// (its @odata.nextLink, i.e. a $skiptoken) fails with "500 Error Calling
+// Substrate Search", however $select is encoded. So a search asks for all
+// its hits in one page, and its nextLink isn't to be followed.
+const SEARCH_PAGE_SIZE = 1000;
+
 // Searches the hierarchy below folderId (or the whole drive when null).
+// Returns the hits in Graph's single page of results (see SEARCH_PAGE_SIZE).
 export async function search(query, sort, folderId = null) {
   const q = encodeURIComponent(query);
   const path = folderId
     ? `/me/drive/items/${encodeURIComponent(folderId)}`
     : `/me/drive/root`;
-  const url = `${config.graphBase}${path}/search(q='${q}')?$top=${config.pageSize}&$select=${SELECT}${orderByParam(sort)}`;
+  const url = `${config.graphBase}${path}/search(q='${q}')?$top=${SEARCH_PAGE_SIZE}&$select=${SELECT}${orderByParam(sort)}`;
   return graphJson(url);
 }
 
