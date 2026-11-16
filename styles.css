@@ -532,6 +532,26 @@ body.split-dragging { cursor: col-resize; }
 }
 .viewer-body .unsupported strong { color: var(--foreground); font-weight: 500; }
 
+/* The names of the files selected, when there are several. */
+.viewer-body .selection-list {
+  align-self: stretch;
+  width: 100%;
+  margin: 0;
+  padding: 0.5rem 0;
+  overflow: auto;
+  list-style: none;
+  color: var(--foreground);
+  font-size: 0.875rem;
+}
+.viewer-body .selection-list li {
+  padding: 0.375rem 1rem;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.viewer-body .selection-list li:last-child { border-bottom: 0; }
+
 /* PDF viewer fills the body and scrolls vertically; the surrounding
    viewer-body's flex centering would otherwise compress it. */
 .viewer-body:has(.pdf-viewer) {

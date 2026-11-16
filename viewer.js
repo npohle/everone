@@ -561,20 +561,41 @@ export async function open(item) {
   }
 }
 
-export function clear() {
+// Empties the pane: no file, title or actions.
+function reset(title) {
   loadId++;
   disposePdfDoc();
   savedFocus = null;
   stopFocusGuard();
-  els.title.textContent = "Preview";
+  els.title.textContent = title;
   els.download.hidden = true;
   els.open.hidden = true;
   currentItem = null;
   els.scribe.hidden = true;
   els.extract.hidden = true;
   els.extract.disabled = true;
+}
+
+export function clear() {
+  reset("Preview");
   const placeholder = document.createElement("div");
   placeholder.className = "placeholder";
   placeholder.textContent = "Select a file from the list to preview it here.";
   setBody(placeholder);
+}
+
+// Several files selected at once: the pane lists their names instead of
+// previewing one.
+export function showSelection(items) {
+  reset(`${items.length} documents selected`);
+  const list = document.createElement("ul");
+  list.className = "selection-list";
+  list.setAttribute("aria-label", "Selected documents");
+  for (const item of items) {
+    const li = document.createElement("li");
+    li.textContent = item.name;
+    li.title = item.name;
+    list.appendChild(li);
+  }
+  setBody(list);
 }

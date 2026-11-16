@@ -171,6 +171,13 @@ listing is narrow, as on a phone (`13-mobile-layout.spec.ts`).
 date split, lazy loading of subfolders, and listing every page of a folder
 (by rewriting Graph's `$top` to 2 with `page.route`).
 
+**Multi-selection in the listing** (`tests/e2e/15-multi-select.spec.ts`):
+Ctrl-click adds documents to the selection, from any folder, or takes them
+out of it; a folder Ctrl-clicked brings everything inside it along,
+recursively (loading subfolders not opened yet). Selected rows are
+highlighted like a single selected one, and with more than one document
+selected the preview pane lists their names instead.
+
 **The listing's search** (`tests/e2e/14-listing-search.spec.ts`): the
 search box in the listing's header (behind a "Search" button when the
 listing is narrow) searches the drive through Graph, limited to the
