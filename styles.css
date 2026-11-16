@@ -426,6 +426,9 @@ body.split-dragging { cursor: col-resize; }
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* The listing's header doesn't widen the pane: below 544px its actions
+     collapse into a "Tools" menu instead. */
+  min-width: 0;
 }
 
 /* Framed like the listing next to it (the File System's root, header and

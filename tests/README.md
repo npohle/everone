@@ -176,7 +176,12 @@ Ctrl-click adds documents to the selection, from any folder, or takes them
 out of it; a folder Ctrl-clicked brings everything inside it along,
 recursively (loading subfolders not opened yet). Selected rows are
 highlighted like a single selected one, and with more than one document
-selected the preview pane lists their names instead.
+selected the preview pane lists their names instead. Phones and tablets
+have no Ctrl key: "Select…" in the listing's Tools menu (an icon-only
+toggle button when the listing is wide) turns on Selection Mode, in which
+every tap works like a Ctrl-click; "Cancel Select" ends it, leaving the
+last row selected the only one selected (`MULTI-SELECT-003`/`-004`, at
+phone width).
 
 **The listing's search** (`tests/e2e/14-listing-search.spec.ts`): the
 search box in the listing's header (behind a "Search" button when the

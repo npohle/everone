@@ -208,3 +208,205 @@ test("MULTI-SELECT-002: ctrl-clicking a folder selects everything inside it, rec
     await removeFromDocuments(page, folderName);
   }
 });
+
+// Selection Mode, for phones and tablets, which have no Ctrl key: picked
+// from the Tools menu ("Select…"), it makes every tap on a row select or
+// deselect it like a Ctrl-click; "Cancel Select" ends it, leaving the last
+// row selected the only one selected.
+
+// A phone-sized viewport, where the listing's actions collapse into "Tools".
+const PHONE = { width: 390, height: 844 };
+
+const menuItem = (page: Page, name: string) => page.getByRole("menuitem", { name, exact: true });
+
+// Picks an entry of the listing's Tools menu.
+async function pickTool(page: Page, name: string) {
+  await page.locator("#listing").getByRole("button", { name: "Tools" }).click();
+  await menuItem(page, name).click();
+  await expect(menuItem(page, name)).toHaveCount(0);
+}
+
+test("MULTI-SELECT-003: Selection Mode selects and deselects documents with plain taps", async ({ page }) => {
+  const artefactsDir = process.env.ARTEFACTS_DIR;
+  const folderName = randomFolderName();
+
+  await page.setViewportSize(PHONE);
+  await page.goto(`https://rubisco.io/`);
+  await expect(page.getByText("Loading")).not.toBeVisible();
+  await selectFolder(page, "Documents");
+  try {
+    await createInDocuments(page, folderName, ["a.txt", "b.txt", "Sub/c.txt"]);
+    await openFolder(page, folderName);
+    await selectFolder(page, "Sub");
+
+    const a = listingRow(page, "a.txt");
+    const b = listingRow(page, "b.txt");
+    const c = listingRow(page, "c.txt");
+    const title = page.locator("#viewer-title");
+    const tools = page.locator("#listing").getByRole("button", { name: "Tools" });
+
+    await a.click();
+    await expect(title).toHaveText("a.txt");
+
+    // The Tools menu offers "Select…", not "Cancel Select", until it's on.
+    await tools.click();
+    await expect(menuItem(page, "Select…")).toBeVisible();
+    await expect(menuItem(page, "Cancel Select")).toHaveCount(0);
+    await page.screenshot({ path: `${artefactsDir}/15-20-tools-select.png` });
+    await menuItem(page, "Select…").click();
+    await expect(page.locator('#listing [data-slot="file-system"]')).toHaveAttribute("data-selection-mode", "true");
+
+    // Plain taps add documents to the selection, which keeps the row
+    // selected before.
+    await c.click();
+    await expect(a).toHaveAttribute("aria-selected", "true");
+    await expect(c).toHaveAttribute("aria-selected", "true");
+    await expect(title).toHaveText("2 documents selected");
+    await b.click();
+    await expect(b).toHaveAttribute("aria-selected", "true");
+    await expect(title).toHaveText("3 documents selected");
+    await expect(selectionList(page)).toHaveText(["c.txt", "a.txt", "b.txt"]);
+    await page.screenshot({ path: `${artefactsDir}/15-21-selection-mode.png` });
+
+    // ...or take them out of it.
+    await a.click();
+    await expect(a).not.toHaveAttribute("aria-selected", "true");
+    await expect(b).toHaveAttribute("aria-selected", "true");
+    await expect(c).toHaveAttribute("aria-selected", "true");
+    await expect(selectionList(page)).toHaveText(["c.txt", "b.txt"]);
+
+    // While it's on, the Tools menu offers "Cancel Select" instead.
+    await tools.click();
+    await expect(menuItem(page, "Cancel Select")).toBeVisible();
+    await expect(menuItem(page, "Select…")).toHaveCount(0);
+    await page.screenshot({ path: `${artefactsDir}/15-22-tools-cancel-select.png` });
+    await page.keyboard.press("Escape");
+
+    // Cancelling leaves the last document selected the only one selected.
+    await pickTool(page, "Cancel Select");
+    await expect(page.locator('#listing [data-slot="file-system"]')).not.toHaveAttribute("data-selection-mode", "true");
+    await expect(b).toHaveAttribute("aria-selected", "true");
+    await expect(c).not.toHaveAttribute("aria-selected", "true");
+    await expect(a).not.toHaveAttribute("aria-selected", "true");
+    await expect(title).toHaveText("b.txt");
+    await page.screenshot({ path: `${artefactsDir}/15-23-cancelled.png` });
+
+    // Back to normal: a plain tap selects just the row tapped.
+    await a.click();
+    await expect(a).toHaveAttribute("aria-selected", "true");
+    await expect(b).not.toHaveAttribute("aria-selected", "true");
+    await expect(title).toHaveText("a.txt");
+    await tools.click();
+    await expect(menuItem(page, "Select…")).toBeVisible();
+    await page.keyboard.press("Escape");
+  } finally {
+    await removeFromDocuments(page, folderName);
+  }
+});
+
+test("MULTI-SELECT-004: in Selection Mode a tapped folder brings everything inside it along", async ({ page }) => {
+  const artefactsDir = process.env.ARTEFACTS_DIR;
+  const folderName = randomFolderName();
+
+  await page.setViewportSize(PHONE);
+  await page.goto(`https://rubisco.io/`);
+  await expect(page.getByText("Loading")).not.toBeVisible();
+  await selectFolder(page, "Documents");
+  try {
+    await createInDocuments(page, folderName, [
+      "top.txt",
+      "Archiv/brief.txt",
+      "Archiv/Tief/deep.txt",
+    ]);
+    await openFolder(page, folderName);
+
+    const top = listingRow(page, "top.txt");
+    const archiv = listingRow(page, "Archiv");
+    const title = page.locator("#viewer-title");
+
+    await pickTool(page, "Select…");
+
+    // The test folder, selected on opening it, stays selected, as with
+    // Ctrl-click; a tap takes it out again.
+    await listingRow(page, folderName).click();
+    await expect(listingRow(page, folderName)).not.toHaveAttribute("aria-selected", "true");
+
+    await top.click();
+    await expect(top).toHaveAttribute("aria-selected", "true");
+    await expect(title).toHaveText("top.txt");
+
+    // The folder isn't opened, but its documents (and its subfolder's) are
+    // loaded and selected.
+    await archiv.click();
+    await expect(archiv).toHaveAttribute("aria-selected", "true");
+    await expect(archiv).toHaveAttribute("aria-expanded", "false");
+    await expect(title).toHaveText("3 documents selected");
+    await expect(selectionList(page)).toHaveText(["deep.txt", "brief.txt", "top.txt"]);
+    await page.screenshot({ path: `${artefactsDir}/15-30-folder-tapped.png` });
+
+    // Cancelling leaves the folder, selected last, the only one selected:
+    // the folder the folder actions act on.
+    await pickTool(page, "Cancel Select");
+    await expect(archiv).toHaveAttribute("aria-selected", "true");
+    await expect(top).not.toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("#listing")).toContainText("“Archiv” selected");
+    await page.locator("#listing").getByRole("button", { name: "Tools" }).click();
+    await expect(menuItem(page, "New Folder")).not.toHaveAttribute("aria-disabled", "true");
+    await page.keyboard.press("Escape");
+    await page.screenshot({ path: `${artefactsDir}/15-31-folder-left.png` });
+  } finally {
+    await removeFromDocuments(page, folderName);
+  }
+});
+
+test("MULTI-SELECT-005: with the listing wide, Selection Mode is an icon toggle beside the folder actions", async ({ page }) => {
+  const artefactsDir = process.env.ARTEFACTS_DIR;
+  const folderName = randomFolderName();
+  const listing = page.locator("#listing");
+
+  await page.goto(`https://rubisco.io/`);
+  await expect(page.getByText("Loading")).not.toBeVisible();
+  await selectFolder(page, "Documents");
+  try {
+    await createInDocuments(page, folderName, ["a.txt", "b.txt"]);
+    await openFolder(page, folderName);
+
+    const select = listing.getByRole("button", { name: "Select…", exact: true });
+    await expect(listing.getByRole("button", { name: "Tools" })).toHaveCount(0);
+    await expect(select).toHaveAttribute("aria-pressed", "false");
+    // It fits between Upload and the sort select.
+    const selectBox = (await select.boundingBox())!;
+    const uploadBox = (await listing.getByRole("button", { name: "Upload", exact: true }).boundingBox())!;
+    const sortBox = (await listing.getByRole("combobox", { name: "Sort by" }).boundingBox())!;
+    expect(selectBox.x).toBeGreaterThanOrEqual(uploadBox.x + uploadBox.width);
+    expect(selectBox.x + selectBox.width).toBeLessThanOrEqual(sortBox.x);
+
+    const a = listingRow(page, "a.txt");
+    const b = listingRow(page, "b.txt");
+    await select.click();
+    const cancel = listing.getByRole("button", { name: "Cancel Select", exact: true });
+    await expect(cancel).toHaveAttribute("aria-pressed", "true");
+    await a.click();
+    await b.click();
+    await expect(a).toHaveAttribute("aria-selected", "true");
+    await expect(b).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("#viewer-title")).toHaveText("2 documents selected");
+    await page.screenshot({ path: `${artefactsDir}/15-40-wide-selection-mode.png` });
+
+    // Space on the focused row toggles it too.
+    await expect(b).toBeFocused();
+    await page.keyboard.press("Space");
+    await expect(b).not.toHaveAttribute("aria-selected", "true");
+    await expect(a).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("Space");
+    await expect(b).toHaveAttribute("aria-selected", "true");
+
+    await cancel.click();
+    await expect(select).toHaveAttribute("aria-pressed", "false");
+    await expect(b).toHaveAttribute("aria-selected", "true");
+    await expect(a).not.toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("#viewer-title")).toHaveText("b.txt");
+  } finally {
+    await removeFromDocuments(page, folderName);
+  }
+});

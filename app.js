@@ -150,6 +150,9 @@ function renderListing(remount = true) {
     emptyLabel: state.searchQuery ? "No matching files." : "This folder is empty.",
     defaultView: "list",
     dateColumn: "createdAt",
+    // "Select…" after the folder actions: Selection Mode, where every click
+    // (or tap, on a phone without a Ctrl key) works like a Ctrl-click.
+    selectionModeAction: true,
     onSelectionChange: (entry, entries) => {
       if (data !== listingData) return;
       // New Folder, Delete Folder and Upload act on the listing's items
