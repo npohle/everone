@@ -57,7 +57,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { FileThumbnail } from "@/components/extend/file-thumbnail"
-import { ChevronDown, ChevronUp, Calendar, FileArchiveIcon, ChevronLeft, ArrowRight, X, Search, ArrowUpDown, Check, Filter, LoaderCircle, FolderMinus, FolderPlus, Upload, Wrench, ListChecks } from "lucide-react"
+import { ChevronDown, ChevronUp, Calendar, FileArchiveIcon, ChevronLeft, ArrowRight, X, Search, ArrowUpDown, Check, Filter, LoaderCircle, FolderMinus, FolderPlus, Upload, Wrench, ListChecks, Scissors, ClipboardPaste } from "lucide-react"
 
 function ArrowDown01Glyph(props: InlineRegistryIconProps) {
   return (
@@ -185,6 +185,8 @@ export type FileSystemActionIcon =
   | "folderMinus"
   | "upload"
   | "listChecks"
+  | "scissors"
+  | "clipboardPaste"
 /**
  * EverOne patch: a button of the host's in the header (see
  * FileSystemProps.actions).
@@ -275,6 +277,11 @@ export type FileSystemProps = {
    * leaving the row selected last the only one selected.
    */
   selectionModeAction?: boolean
+  /**
+   * EverOne patch: entries cut to the host's clipboard. The list view shows
+   * them, and everything inside the folders among them, greyed out.
+   */
+  cutPaths?: string[]
   /** Resolve a URL (e.g. presigned) for a file without one. */
   getFileUrl?: (file: FileSystemFileItem) => string | Promise<string>
   /** Lazily fetch children for folders with `hasChildren` and no loaded entries. */
@@ -1329,6 +1336,7 @@ export function FileSystem({
   dateColumn = "updatedAt",
   actions,
   selectionModeAction = false,
+  cutPaths,
   emptyLabel = "This folder is empty",
   onSearchChange,
   searchResults = null,
@@ -2014,6 +2022,7 @@ export function FileSystem({
   const viewProps: FileSystemViewProps = {
     attachedStagePaths,
     currentPath,
+    cutPaths,
     dateColumn,
     emptyLabel,
     entries: currentEntries,
@@ -2315,7 +2324,7 @@ export function FileSystem({
 // EverOne patch: the host's actions (FileSystemProps.actions). Outline
 // buttons styled like the sort select's trigger, or, when the component is
 // narrow, a "Tools" menu holding them.
-const ACTIONS_MIN_WIDTH = 544
+const ACTIONS_MIN_WIDTH = 616
 const ACTION_ICONS: Record<
   FileSystemActionIcon,
   React.ComponentType<{ className?: string }>
@@ -2324,6 +2333,8 @@ const ACTION_ICONS: Record<
   folderMinus: FolderMinus,
   upload: Upload,
   listChecks: ListChecks,
+  scissors: Scissors,
+  clipboardPaste: ClipboardPaste,
 }
 // The sort select's trigger: its height (32px, Button's sm), padding,
 // border, background and font.
@@ -3165,6 +3176,8 @@ function FileSystemDateRangeDialog({
 }
 type FileSystemViewProps = {
   currentPath: string
+  /** EverOne patch: see FileSystemProps.cutPaths. */
+  cutPaths?: string[]
   /** EverOne patch: see FileSystemProps.dateColumn. */
   dateColumn: FileSystemDateColumn
   /** EverOne patch: see FileSystemProps.emptyLabel. */
@@ -3664,6 +3677,7 @@ function FileSystemListColumnHeader({
 }
 function FileSystemListView({
   currentPath,
+  cutPaths,
   dateColumn,
   emptyLabel,
   ensureChildren,
@@ -3756,6 +3770,7 @@ function FileSystemListView({
       <FileSystemPierreTree
         key={currentPath}
         currentPath={currentPath}
+        cutPaths={cutPaths}
         dateColumn={dateColumn}
         ensureChildren={ensureChildren}
         hasActiveFilters={fileFilter !== null || expandAll}
@@ -3788,6 +3803,7 @@ const TREE_LOADING_ROW = "Loading…"
 const TREE_THUMBNAIL_SPRITE_LIMIT = 400
 function FileSystemPierreTree({
   currentPath,
+  cutPaths,
   dateColumn,
   ensureChildren,
   hasActiveFilters,
@@ -3805,6 +3821,7 @@ function FileSystemPierreTree({
   treeModelRef,
 }: {
   currentPath: string
+  cutPaths?: string[]
   dateColumn: FileSystemDateColumn
   ensureChildren: (folderPath: string) => void
   hasActiveFilters: boolean
@@ -4465,6 +4482,42 @@ function FileSystemPierreTree({
       if (treeModelRef.current === handle) treeModelRef.current = null
     }
   }, [currentPath, expandDirectories, model, treeModelRef])
+  // EverOne patch: cut entries (see FileSystemProps.cutPaths) are greyed
+  // out by a style of their own in the tree's shadow DOM, matching rows by
+  // relative path: a folder's own row (with or without its trailing slash)
+  // and every row below it.
+  React.useLayoutEffect(() => {
+    const shadowRoot = model.getFileTreeContainer()?.shadowRoot
+    if (!shadowRoot) return
+    const selectors: string[] = []
+    for (const path of cutPaths ?? []) {
+      if (!path.startsWith(currentPath) || path === currentPath) continue
+      const relativePath = path.slice(currentPath.length)
+      const quoted = (value: string) => `"${CSS.escape(value)}"`
+      const row = (match: string) => `button[data-type='item'][data-item-path${match}]`
+      if (relativePath.endsWith("/")) {
+        selectors.push(
+          row(`=${quoted(relativePath.slice(0, -1))}`),
+          row(`^=${quoted(relativePath)}`)
+        )
+      } else {
+        selectors.push(row(`=${quoted(relativePath)}`))
+      }
+    }
+    let style = shadowRoot.querySelector<HTMLStyleElement>(
+      "style[data-file-system-cut]"
+    )
+    if (!selectors.length) {
+      style?.remove()
+      return
+    }
+    if (!style) {
+      style = document.createElement("style")
+      style.setAttribute("data-file-system-cut", "")
+      shadowRoot.appendChild(style)
+    }
+    style.textContent = `${selectors.join(",\n")} { opacity: 0.5; }`
+  }, [currentPath, cutPaths, model])
   // Rows live in the tree's shadow DOM; composedPath surfaces the row
   // element behind a pointer or keyboard event so it can resolve to a
   // manifest entry.

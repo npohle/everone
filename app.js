@@ -6,6 +6,7 @@ import * as viewer from "./viewer.js";
 import * as uploadPreview from "./upload-preview.js";
 import { mergeFiles, uploadNamesValid, selectionAfterRemoval, canSuggestName } from "./upload-list.js";
 import { suggestFileName } from "./extract.js";
+import { topmostEntries, pathsOfItems, pasteProblem, isInFolder, itemCount } from "./clipboard.js";
 import {
   toFileSystemItems,
   parentPath,
@@ -77,6 +78,13 @@ const state = {
   // selected entry, when it's a folder, as { path, item } (item being its
   // driveItem).
   folder: null,
+  // The listing's selected entries (the items' or the search results'), as
+  // { path, kind, item } (item being the driveItem): what Cut acts on.
+  selection: [],
+  // Cut and Paste: the driveItems cut (null when there are none), which
+  // Paste moves into the selected folder, and whether it's doing so now.
+  clipboard: null,
+  pasting: false,
   // Upload dialog: target folder ({ path, item }) and the listing it is in, picked files, the name each file is
   // uploaded as and its result (both keyed by File), and the file shown in
   // the preview pane, plus the files whose name is being suggested by
@@ -86,10 +94,28 @@ const state = {
 };
 
 function showToast(msg, ms = 4000) {
+  els.toast.classList.remove("progress");
   els.toast.textContent = msg;
   els.toast.hidden = false;
   clearTimeout(showToast._t);
   showToast._t = setTimeout(() => { els.toast.hidden = true; }, ms);
+}
+
+// A toast with a progress bar (`value` of `max` done), not an error. It stays
+// until a newer toast replaces it, or for `ms` when given.
+function showProgressToast(msg, value, max, ms = 0) {
+  const text = document.createElement("div");
+  text.textContent = msg;
+  const bar = document.createElement("progress");
+  bar.className = "toast-progress";
+  bar.max = max;
+  bar.value = value;
+  bar.setAttribute("aria-label", msg);
+  els.toast.replaceChildren(text, bar);
+  els.toast.classList.add("progress");
+  els.toast.hidden = false;
+  clearTimeout(showToast._t);
+  if (ms) showToast._t = setTimeout(() => { els.toast.hidden = true; }, ms);
 }
 
 // Pretty-prints the raw Graph error body (see graph.js) when it's JSON.
@@ -133,6 +159,7 @@ function renderListing(remount = true) {
     listingData = newListingData();
     listingData.manifest = addToListing(listingData, state.items, "");
     state.folder = null;
+    state.selection = [];
     // A remount empties the listing's search box.
     endListingSearch();
   }
@@ -158,6 +185,9 @@ function renderListing(remount = true) {
       // New Folder, Delete Folder and Upload act on the listing's items
       // only (see folderActions()), and on a folder selected on its own.
       state.folder = entry && entry.kind === "folder" && !results() ? { path: entry.path, item: driveItem(entry.path) } : null;
+      state.selection = entries
+        .map((e) => ({ path: e.path, kind: e.kind, item: driveItem(e.path) }))
+        .filter((e) => e.item);
       // Several files selected (Ctrl-click) are listed instead of
       // previewed; a single one is previewed. Clearing the selection, or
       // selecting folders only, keeps the current preview.
@@ -179,6 +209,7 @@ function renderListing(remount = true) {
         if (!cursor) {
           data.taken.delete(path);
           data.childCounts.set(path, 0);
+          forget(data, path, true);
         }
         data.childCounts.set(path, data.childCounts.get(path) + driveItems.length);
         const items = addToListing(data, driveItems, path);
@@ -203,6 +234,16 @@ function addToListing(data, driveItems, parentPath) {
   return items;
 }
 
+// Drops what the listing `data` knew of the entry at `path` and, for a
+// folder, of everything inside it; with `inside`, only of what's inside it
+// (a folder being listed anew).
+function forget(data, path, inside = false) {
+  for (const p of data.byPath.keys()) {
+    const below = path.endsWith("/") && p !== path && p.startsWith(path);
+    if (below || (!inside && p === path)) data.byPath.delete(p);
+  }
+}
+
 // Lists a folder of the listing `data` anew after its children changed, and
 // opens it. Failures were already reported by loadChildren.
 async function refreshFolder(path, data = listingData) {
@@ -224,7 +265,11 @@ function folderItemCount(folder) {
 // empty: no files, no subfolders.
 function updateFolderActions() {
   if (listingProps) {
-    const props = { ...listingProps, actions: folderActions() };
+    // Cut items show greyed out, wherever the listing (or its search
+    // results) shows them.
+    const shown = state.listingSearch?.results ? state.listingSearch.byPath : listingData.byPath;
+    const cutPaths = state.clipboard ? pathsOfItems(state.clipboard, shown) : [];
+    const props = { ...listingProps, actions: folderActions(), cutPaths };
     if (listing) listing.render(props);
     else listing = mountFileSystem(els.listing, props);
   }
@@ -256,6 +301,25 @@ function folderActions() {
       icon: "upload",
       disabled: !folder,
       onSelect: openUploadDialog,
+    },
+    // Cut and Paste are just their icons while the actions are buttons.
+    {
+      id: "cut",
+      label: "Cut",
+      title: "Cut the selected items, to paste them into another folder",
+      icon: "scissors",
+      iconOnly: true,
+      disabled: state.loading || state.pasting || state.selection.length === 0,
+      onSelect: cutSelection,
+    },
+    {
+      id: "paste",
+      label: "Paste",
+      title: "Move the cut items into the selected folder",
+      icon: "clipboardPaste",
+      iconOnly: true,
+      disabled: !folder || !state.clipboard || state.pasting,
+      onSelect: pasteClipboard,
     },
   ];
 }
@@ -332,6 +396,78 @@ async function deleteFolder() {
     renderListing(false);
   }
   if (data === listingData) listing.select(parent || null);
+}
+
+// Cut puts the selected items into the clipboard (a folder with everything
+// inside it), replacing what was there; the listing greys them out until
+// they're pasted.
+function cutSelection() {
+  if (state.loading || state.pasting || state.selection.length === 0) return;
+  state.clipboard = topmostEntries(state.selection).map((e) => e.item);
+  updateFolderActions();
+}
+
+// Paste moves the cut items into the selected folder through Graph, one
+// after the other, while a toast's progress bar counts them. The listing
+// shows each one in its new place as soon as it's moved. What couldn't be
+// moved stays cut, to be pasted elsewhere.
+async function pasteClipboard() {
+  const target = state.loading || state.listingSearch ? null : state.folder;
+  if (!target || !state.clipboard || state.pasting) return;
+  const items = state.clipboard;
+  const data = listingData;
+  const where = folderDrivePath(target);
+  const failures = [];
+  state.pasting = true;
+  updateFolderActions();
+  for (const [i, item] of items.entries()) {
+    showProgressToast(`Moving ${itemCount(items.length)} to ${where}… (${i + 1} of ${items.length})`, i, items.length);
+    try {
+      const path = data === listingData ? (pathsOfItems([item], data.byPath)[0] ?? null) : null;
+      const problem = pasteProblem(item, path, target);
+      if (problem) throw new Error(problem);
+      // One already in the target folder has nothing to move.
+      const move = !isInFolder(item, target);
+      if (move) await graph.moveItem(item.id, target.item.id);
+      uncut(item);
+      if (move) await showMoved(path, target, data);
+    } catch (err) {
+      failures.push(`${item.name}: ${errorDump(err)}`);
+    }
+    updateFolderActions();
+  }
+  state.pasting = false;
+  updateFolderActions();
+  const moved = items.length - failures.length;
+  if (failures.length === 0) {
+    showProgressToast(`Moved ${itemCount(items.length)} to ${where}`, items.length, items.length, 4000);
+  } else {
+    showToast(`Moved ${moved} of ${itemCount(items.length)} to ${where}. Couldn't move ${failures.length}:\n${failures.join("\n")}`, 15000);
+  }
+}
+
+function uncut(item) {
+  const rest = (state.clipboard || []).filter((c) => c.id !== item.id);
+  state.clipboard = rest.length ? rest : null;
+}
+
+// Shows an item just moved into `target` in its new place: out of the folder
+// it was in (when the listing showed it, at `path`), into the target.
+async function showMoved(path, target, data) {
+  if (data !== listingData) return;
+  if (path) {
+    const parent = parentPath(path);
+    if (!parent) {
+      // The root's items are the listing's own: drop the item from them.
+      data.manifest = data.manifest.filter((item) => item.path !== path);
+      forget(data, path);
+      renderListing(false);
+    } else if (!parent.startsWith(target.path)) {
+      // (Listing the target anew lists the folders inside it anew too.)
+      await refreshFolder(parent, data);
+    }
+  }
+  await refreshFolder(target.path, data);
 }
 
 function openUploadDialog() {
@@ -897,7 +1033,7 @@ function initSplitDivider() {
   };
   const currentWidth = () => {
     const v = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--list-width"), 10);
-    return Number.isFinite(v) ? v : 560;
+    return Number.isFinite(v) ? v : 640;
   };
 
   const saved = parseInt(localStorage.getItem(STORAGE_KEY) || "", 10);

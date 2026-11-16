@@ -183,6 +183,18 @@ every tap works like a Ctrl-click; "Cancel Select" ends it, leaving the
 last row selected the only one selected (`MULTI-SELECT-003`/`-004`, at
 phone width).
 
+**Cut and Paste** (`tests/e2e/16-cut-paste.spec.ts`): "Cut" puts the
+documents and folders selected in the listing into an internal clipboard
+and greys them out there (a cut folder with everything inside it); "Paste"
+is enabled once something is cut and a folder is selected, and moves the
+cut items into it through Graph, one after the other. A toast's progress
+bar counts the moves, and the listing shows each item in its new place as
+soon as it's moved (`CUT-PASTE-001` holds the second move back with
+`page.route` to check the first one already shows). Both are icon-only
+buttons beside the folder actions while the listing is wide, and entries of
+its Tools menu when it's narrow (`CUT-PASTE-002`, at phone width, which
+also pastes a folder into itself, and fails).
+
 **The listing's search** (`tests/e2e/14-listing-search.spec.ts`): the
 search box in the listing's header (behind a "Search" button when the
 listing is narrow) searches the drive through Graph, limited to the

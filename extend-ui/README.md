@@ -72,11 +72,12 @@ change since is marked with an `EverOne patch` comment:
   the view switcher (and so `onViewChange`) are gone; the header keeps sort,
   filter and search. The view is set by the host (`defaultView` / `view`).
 * **`actions`** (`FileSystemAction[]`) — the host's buttons at the left of
-  the header (EverOne's New Folder, Delete Folder and Upload): `id` (the
-  button's `data-action`), `label`, `title`, `icon` (`"folderPlus"`,
-  `"folderMinus"`, `"upload"` or `"listChecks"`), `disabled`, `iconOnly`
+  the header (EverOne's New Folder, Delete Folder, Upload, Cut and Paste):
+  `id` (the button's `data-action`), `label`, `title`, `icon`
+  (`"folderPlus"`, `"folderMinus"`, `"upload"`, `"listChecks"`,
+  `"scissors"` or `"clipboardPaste"`), `disabled`, `iconOnly`
   (just the icon while they're buttons), `pressed` (a toggle's state) and
-  `onSelect`. They're styled like the sort select's trigger. Below 544px of width they collapse into a
+  `onSelect`. They're styled like the sort select's trigger. Below 616px of width they collapse into a
   "Tools" menu, and below iPad width they take the inline search's room (it
   collapses into its popover, as below 560px).
 * **`dateColumn`** — `"createdAt"` makes the list view's date column "Date
@@ -114,3 +115,6 @@ change since is marked with an `EverOne patch` comment:
   Select", which ends it, leaving the row the user selected last (if it
   still is) the only one selected. The component's root carries
   `data-selection-mode="true"` meanwhile.
+* **`cutPaths`** — the entries cut to the host's clipboard (EverOne's Cut).
+  The list view shows them greyed out, and everything inside the folders
+  among them, with a style of its own in the tree's shadow DOM.
