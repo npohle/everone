@@ -384,7 +384,7 @@ a:where(:not(.button, .extend-ui *, [data-slot], [data-slot] *)):hover { text-de
 /* Split layout */
 .split {
   display: grid;
-  grid-template-columns: var(--list-width, 560px) 0.75rem 1fr;
+  grid-template-columns: var(--list-width, 640px) 0.75rem 1fr;
   /* The viewport, less the topbar (3.5rem) and .main's padding (2rem). */
   height: calc(100vh - 5.5rem);
   min-height: 400px;
@@ -426,7 +426,7 @@ body.split-dragging { cursor: col-resize; }
   display: flex;
   flex-direction: column;
   min-height: 0;
-  /* The listing's header doesn't widen the pane: below 544px its actions
+  /* The listing's header doesn't widen the pane: below 616px its actions
      collapse into a "Tools" menu instead. */
   min-width: 0;
 }
@@ -614,6 +614,20 @@ body.split-dragging { cursor: col-resize; }
   max-width: min(90vw, 720px);
   max-height: 60vh;
   overflow: auto;
+}
+/* A toast reporting progress (Paste), like a plain sonner toast. */
+.toast.progress {
+  background: var(--background);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  width: min(90vw, 24rem);
+}
+.toast-progress {
+  display: block;
+  width: 100%;
+  height: 0.5rem;
+  margin-top: 0.5rem;
+  accent-color: var(--primary);
 }
 
 /* extend-ui's Dialog: DialogContent, DialogTitle, DialogDescription and

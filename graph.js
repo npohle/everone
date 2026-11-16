@@ -109,6 +109,19 @@ export async function deleteEmptyFolder(itemId) {
   });
 }
 
+// Moves an item (a folder with everything inside it) into the folder
+// parentId, keeping its name. Uses conflictBehavior "fail" so an item of the
+// same name already there surfaces as an error instead of being replaced.
+// Returns the moved driveItem.
+export async function moveItem(itemId, parentId) {
+  const url = `${config.graphBase}/me/drive/items/${encodeURIComponent(itemId)}?@microsoft.graph.conflictBehavior=fail`;
+  return graphJson(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ parentReference: { id: parentId } }),
+  });
+}
+
 // Graph's simple upload is only recommended up to 4 MB; anything larger goes
 // through an upload session in chunks. Chunk sizes must be multiples of
 // 320 KiB.
