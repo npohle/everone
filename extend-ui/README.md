@@ -74,8 +74,9 @@ change since is marked with an `EverOne patch` comment:
 * **`actions`** (`FileSystemAction[]`) — the host's buttons at the left of
   the header (EverOne's New Folder, Delete Folder and Upload): `id` (the
   button's `data-action`), `label`, `title`, `icon` (`"folderPlus"`,
-  `"folderMinus"` or `"upload"`), `disabled` and `onSelect`. They're styled
-  like the sort select's trigger. Below 520px of width they collapse into a
+  `"folderMinus"`, `"upload"` or `"listChecks"`), `disabled`, `iconOnly`
+  (just the icon while they're buttons), `pressed` (a toggle's state) and
+  `onSelect`. They're styled like the sort select's trigger. Below 544px of width they collapse into a
   "Tools" menu, and below iPad width they take the inline search's room (it
   collapses into its popover, as below 560px).
 * **`dateColumn`** — `"createdAt"` makes the list view's date column "Date
@@ -103,3 +104,13 @@ change since is marked with an `EverOne patch` comment:
   gets all selected entries as a second argument (in the tree's order;
   the first argument is null unless exactly one is selected), and the
   footer counts them.
+* **`selectionModeAction`** — adds a "Select…" action after the host's
+  `actions` (an icon-only toggle while they're buttons, an entry of the
+  "Tools" menu once they collapse), switching the list view into Selection
+  Mode, for touch screens without a Ctrl key: every click or tap on a row
+  (or Space on a focused one) adds it to the selection, or takes it out,
+  as a Ctrl/⌘-click does — a folder with everything inside it — and moving
+  the focus no longer selects. While it's on the action reads "Cancel
+  Select", which ends it, leaving the row the user selected last (if it
+  still is) the only one selected. The component's root carries
+  `data-selection-mode="true"` meanwhile.

@@ -57,7 +57,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { FileThumbnail } from "@/components/extend/file-thumbnail"
-import { ChevronDown, ChevronUp, Calendar, FileArchiveIcon, ChevronLeft, ArrowRight, X, Search, ArrowUpDown, Check, Filter, LoaderCircle, FolderMinus, FolderPlus, Upload, Wrench } from "lucide-react"
+import { ChevronDown, ChevronUp, Calendar, FileArchiveIcon, ChevronLeft, ArrowRight, X, Search, ArrowUpDown, Check, Filter, LoaderCircle, FolderMinus, FolderPlus, Upload, Wrench, ListChecks } from "lucide-react"
 
 function ArrowDown01Glyph(props: InlineRegistryIconProps) {
   return (
@@ -180,7 +180,11 @@ export type FileSystemController = {
   select(path: string | null): void
 }
 /** EverOne patch: the icons a FileSystemAction can show. */
-export type FileSystemActionIcon = "folderPlus" | "folderMinus" | "upload"
+export type FileSystemActionIcon =
+  | "folderPlus"
+  | "folderMinus"
+  | "upload"
+  | "listChecks"
 /**
  * EverOne patch: a button of the host's in the header (see
  * FileSystemProps.actions).
@@ -193,6 +197,13 @@ export type FileSystemAction = {
   title?: string
   icon?: FileSystemActionIcon
   disabled?: boolean
+  /**
+   * Shown as just its icon (the label as its tooltip and accessible name)
+   * while the actions are buttons.
+   */
+  iconOnly?: boolean
+  /** A toggle's state: the button shows pressed while it's on. */
+  pressed?: boolean
   onSelect: () => void
 }
 export type FileSystemProps = {
@@ -256,6 +267,14 @@ export type FileSystemProps = {
    * menu.
    */
   actions?: FileSystemAction[]
+  /**
+   * EverOne patch: adds a "Select…" action after the host's `actions`,
+   * which switches the list view into Selection Mode: every click (or tap)
+   * on a row adds it to the selection, or takes it out, like a Ctrl/⌘-click
+   * does. While it's on, the action is "Cancel Select", which ends it,
+   * leaving the row selected last the only one selected.
+   */
+  selectionModeAction?: boolean
   /** Resolve a URL (e.g. presigned) for a file without one. */
   getFileUrl?: (file: FileSystemFileItem) => string | Promise<string>
   /** Lazily fetch children for folders with `hasChildren` and no loaded entries. */
@@ -1309,6 +1328,7 @@ export function FileSystem({
   onFolderOpen,
   dateColumn = "updatedAt",
   actions,
+  selectionModeAction = false,
   emptyLabel = "This folder is empty",
   onSearchChange,
   searchResults = null,
@@ -1459,6 +1479,29 @@ export function FileSystem({
     (entry: FileSystemEntry | null) => selectEntries(entry ? [entry] : []),
     [selectEntries]
   )
+  // EverOne patch: Selection Mode (see FileSystemProps.selectionModeAction),
+  // which only the list view has. Its action follows the host's, as an
+  // icon-only toggle while they're buttons, so they still fit beside sort,
+  // filter and search.
+  const [isSelectionMode, setIsSelectionMode] = React.useState(false)
+  const selectionMode = isSelectionMode && view === "list"
+  const headerActions = React.useMemo<FileSystemAction[] | undefined>(() => {
+    if (!selectionModeAction || view !== "list") return actions
+    return [
+      ...(actions ?? []),
+      {
+        id: "select",
+        label: selectionMode ? "Cancel Select" : "Select…",
+        title: selectionMode
+          ? "Cancel Select: keep only the item selected last"
+          : "Select…: every click selects or deselects an item",
+        icon: "listChecks",
+        iconOnly: true,
+        pressed: selectionMode,
+        onSelect: () => setIsSelectionMode(!selectionMode),
+      },
+    ]
+  }, [actions, selectionMode, selectionModeAction, view])
   // A query or filter change can hide the selected entry out from under the
   // views.
   React.useEffect(() => {
@@ -1986,6 +2029,7 @@ export function FileSystem({
     onSelectEntries: selectEntries,
     onSortColumnClick: toggleSortColumn,
     pageUrlCache,
+    selectionMode,
     poolStagePath,
     registerStageHost,
     renderFilePreview,
@@ -2030,6 +2074,8 @@ export function FileSystem({
       ref={rootRef}
       tabIndex={-1}
       data-slot="file-system"
+      // EverOne patch: see FileSystemProps.selectionModeAction.
+      data-selection-mode={selectionMode ? "true" : undefined}
       onKeyDown={(event) => {
         // ⌘F focuses the toolbar search while focus is inside the component.
         if ((event.metaKey || event.ctrlKey) && event.key === "f") {
@@ -2051,9 +2097,9 @@ export function FileSystem({
         data-slot="file-system-header"
         className="flex h-12 shrink-0 items-center justify-between gap-2 border-b bg-muted/40 px-2"
       >
-        {actions?.length ? (
+        {headerActions?.length ? (
           <FileSystemActions
-            actions={actions}
+            actions={headerActions}
             isCollapsed={areActionsCollapsed}
           />
         ) : null}
@@ -2077,7 +2123,9 @@ export function FileSystem({
             // EverOne patch: the host's actions take the room of the
             // inline search below iPad width.
             layout={
-              actions?.length && isBelowIpadWidth && headerLayout === "full"
+              headerActions?.length &&
+              isBelowIpadWidth &&
+              headerLayout === "full"
                 ? "compact"
                 : headerLayout
             }
@@ -2267,7 +2315,7 @@ export function FileSystem({
 // EverOne patch: the host's actions (FileSystemProps.actions). Outline
 // buttons styled like the sort select's trigger, or, when the component is
 // narrow, a "Tools" menu holding them.
-const ACTIONS_MIN_WIDTH = 520
+const ACTIONS_MIN_WIDTH = 544
 const ACTION_ICONS: Record<
   FileSystemActionIcon,
   React.ComponentType<{ className?: string }>
@@ -2275,6 +2323,7 @@ const ACTION_ICONS: Record<
   folderPlus: FolderPlus,
   folderMinus: FolderMinus,
   upload: Upload,
+  listChecks: ListChecks,
 }
 // The sort select's trigger: its height (32px, Button's sm), padding,
 // border, background and font.
@@ -2305,12 +2354,19 @@ function FileSystemActions({
             size="sm"
             data-action={action.id}
             title={action.title}
+            aria-label={action.iconOnly ? action.label : undefined}
+            aria-pressed={action.pressed}
             disabled={action.disabled}
             onClick={action.onSelect}
-            className={ACTION_BUTTON_CLASSNAME}
+            className={cn(
+              ACTION_BUTTON_CLASSNAME,
+              action.iconOnly && "w-8 px-0 has-[>svg]:px-0",
+              action.pressed &&
+                "bg-accent text-accent-foreground [&_svg:not([class*='text-'])]:text-accent-foreground"
+            )}
           >
             <FileSystemActionIconGlyph action={action} />
-            {action.label}
+            {action.iconOnly ? null : action.label}
           </Button>
         ))}
       </div>
@@ -3134,6 +3190,11 @@ type FileSystemViewProps = {
   /** EverOne patch: the list view's selection of several entries. */
   onSelectEntries: (entries: FileSystemEntry[]) => void
   onSortColumnClick: (key: FileSystemSortKey) => void
+  /**
+   * EverOne patch: whether the list view is in Selection Mode (see
+   * FileSystemProps.selectionModeAction).
+   */
+  selectionMode: boolean
   /** Pooled paths currently attached to the DOM (reveal instantly). */
   attachedStagePaths: string[]
   /** `"path#pageIndex"` → thumbnail URL, shared by every pager. */
@@ -3616,6 +3677,7 @@ function FileSystemListView({
   onSortColumnClick,
   searchQuery,
   selectedPath,
+  selectionMode,
   sort,
   treeExpansionRef,
   treeModelRef,
@@ -3709,6 +3771,7 @@ function FileSystemListView({
         onSelectEntries={onSelectEntries}
         relativePaths={relativePaths}
         searchQuery={searchQuery}
+        selectionMode={selectionMode}
         sort={sort}
         treeExpansionRef={treeExpansionRef}
         treeModelRef={treeModelRef}
@@ -3736,6 +3799,7 @@ function FileSystemPierreTree({
   onSelectEntries,
   relativePaths,
   searchQuery,
+  selectionMode,
   sort,
   treeExpansionRef,
   treeModelRef,
@@ -3752,6 +3816,7 @@ function FileSystemPierreTree({
   onSelectEntries: (entries: FileSystemEntry[]) => void
   relativePaths: string[]
   searchQuery: string
+  selectionMode: boolean
   sort: FileSystemSortState
   treeExpansionRef: React.RefObject<Map<string, readonly string[]>>
   treeModelRef: React.RefObject<TreeModelHandle | null>
@@ -3877,6 +3942,7 @@ function FileSystemPierreTree({
     onSelect,
     onSelectEntries,
     relativePaths,
+    selectionMode,
   })
   React.useLayoutEffect(() => {
     latestRef.current = {
@@ -3886,6 +3952,7 @@ function FileSystemPierreTree({
       onSelect,
       onSelectEntries,
       relativePaths,
+      selectionMode,
     }
   })
   // EverOne patch: see the multi-selection below; the tree reads its
@@ -4008,8 +4075,12 @@ function FileSystemPierreTree({
   const recursiveFoldersRef = React.useRef(new Set<string>())
   const selectedPathsRef = React.useRef<ReadonlySet<string>>(new Set())
   const suppressSelectionRef = React.useRef(false)
+  // The rows the user added to the selection, the latest last (see
+  // Selection Mode below).
+  const selectionOrderRef = React.useRef<string[]>([])
   React.useLayoutEffect(() => {
     selectedPathsRef.current = new Set(model.getSelectedPaths())
+    selectionOrderRef.current = [...selectedPathsRef.current]
   }, [model])
   const folderKey = (path: string) => (path.endsWith("/") ? path : `${path}/`)
   const isFolderPath = (path: string) =>
@@ -4130,9 +4201,17 @@ function FileSystemPierreTree({
       const recursive = recursiveFoldersRef.current
       if (!additiveGestureRef.current) {
         recursive.clear()
+        selectionOrderRef.current = [...selectedPaths]
       } else {
         const previous = selectedPathsRef.current
         const next = new Set(selectedPaths)
+        const order = selectionOrderRef.current
+        for (const path of selectedPaths) {
+          if (previous.has(path)) continue
+          const at = order.indexOf(path)
+          if (at !== -1) order.splice(at, 1)
+          order.push(path)
+        }
         changeSelection(() => {
           for (const path of previous) {
             if (!next.has(path)) deselectWithin(path)
@@ -4250,6 +4329,30 @@ function FileSystemPierreTree({
     })
     if (searchValue) model.setSearch(searchValue)
   }, [collectExpandedDirectories, hasActiveFilters, model, preparedInput])
+  // EverOne patch: Selection Mode (see FileSystemProps.selectionModeAction)
+  // makes every click an additive gesture (see the tree's capture handlers
+  // below). Ending it leaves the row the user selected last, if it still is
+  // selected (else the last one in the tree's order), the only one selected.
+  const wasSelectionModeRef = React.useRef(selectionMode)
+  React.useEffect(() => {
+    const wasSelectionMode = wasSelectionModeRef.current
+    wasSelectionModeRef.current = selectionMode
+    if (selectionMode || !wasSelectionMode) return
+    const selected = model.getSelectedPaths()
+    if (selected.length <= 1) return
+    const last =
+      selectionOrderRef.current.findLast(
+        (path) => treeItem(path)?.isSelected() ?? false
+      ) ?? selected[selected.length - 1]
+    recursiveFoldersRef.current.clear()
+    changeSelection(() => {
+      for (const path of selected) treeItem(path)?.deselect()
+      treeItem(last)?.select()
+    })
+    selectionOrderRef.current = [last]
+    reportSelection()
+    // The helpers read the latest paths through latestRef.
+  }, [model, selectionMode])
   // EverOne patch: rows loaded inside recursively selected folders (see
   // the multi-selection above) join the selection.
   React.useEffect(() => {
@@ -4295,14 +4398,20 @@ function FileSystemPierreTree({
   // focus into the (single) selection so arrowing selects like Finder. Shift
   // ranges keep the focused row selected, so they pass through untouched.
   // EverOne patch: so do Ctrl/⌘-clicks, which focus the row they take out
-  // of the selection.
+  // of the selection, and any focus change in Selection Mode.
   React.useEffect(() => {
     let lastFocusedPath = model.getFocusedPath()
     return model.subscribe(() => {
       const focusedPath = model.getFocusedPath()
       if (focusedPath === lastFocusedPath) return
       lastFocusedPath = focusedPath
-      if (!focusedPath || additiveGestureRef.current) return
+      if (
+        !focusedPath ||
+        additiveGestureRef.current ||
+        latestRef.current.selectionMode
+      ) {
+        return
+      }
       const item = model.getItem(focusedPath)
       if (!item || item.isSelected()) return
       for (const path of model.getSelectedPaths()) {
@@ -4347,6 +4456,7 @@ function FileSystemPierreTree({
         } finally {
           suppressSelectionRef.current = false
           selectedPathsRef.current = new Set(model.getSelectedPaths())
+          selectionOrderRef.current = [...selectedPathsRef.current]
         }
       },
     }
@@ -4410,16 +4520,28 @@ function FileSystemPierreTree({
       className="block min-h-0 flex-1"
       // EverOne patch: see the multi-selection above. A row takes focus as
       // the mouse goes down, before the click selects it. Ctrl/⌘-A selects
-      // the rows shown, without what's inside their folders.
+      // the rows shown, without what's inside their folders. In Selection
+      // Mode a plain click (or Space on a row) is a Ctrl-click: the tree
+      // reads the modifier off the native event, which reaches its rows
+      // only after this capture handler.
       onMouseDownCapture={(event) =>
-        markGesture(event.ctrlKey || event.metaKey || event.shiftKey)
+        markGesture(
+          selectionMode || event.ctrlKey || event.metaKey || event.shiftKey
+        )
       }
-      onClickCapture={(event) =>
-        markGesture(event.ctrlKey || event.metaKey || event.shiftKey)
-      }
+      onClickCapture={(event) => {
+        const hasModifier = event.ctrlKey || event.metaKey || event.shiftKey
+        if (selectionMode && !hasModifier) {
+          Object.defineProperty(event.nativeEvent, "ctrlKey", { value: true })
+        }
+        markGesture(selectionMode || hasModifier)
+      }}
       onKeyDownCapture={(event) =>
         markGesture(
-          (event.ctrlKey || event.metaKey || event.shiftKey) &&
+          (selectionMode ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.shiftKey) &&
             event.key.toLowerCase() !== "a"
         )
       }
