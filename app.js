@@ -67,7 +67,8 @@ const state = {
   // search started), and once they're in, the results' manifest items and
   // manifest path → driveItem.
   listingSearch: null,
-  // Currently selected file id (the one being previewed).
+  // Currently selected file id (the one being previewed; null while
+  // several files are selected).
   selectedId: null,
   // True while the root listing or a search request is in flight (a search
   // in the listing's header aside, see listingSearch).
@@ -149,13 +150,17 @@ function renderListing(remount = true) {
     emptyLabel: state.searchQuery ? "No matching files." : "This folder is empty.",
     defaultView: "list",
     dateColumn: "createdAt",
-    onSelectionChange: (entry) => {
+    onSelectionChange: (entry, entries) => {
       if (data !== listingData) return;
       // New Folder, Delete Folder and Upload act on the listing's items
-      // only (see folderActions()).
+      // only (see folderActions()), and on a folder selected on its own.
       state.folder = entry && entry.kind === "folder" && !results() ? { path: entry.path, item: driveItem(entry.path) } : null;
-      // Clearing the selection keeps the current preview.
-      if (entry && entry.kind === "file") selectItem(driveItem(entry.path));
+      // Several files selected (Ctrl-click) are listed instead of
+      // previewed; a single one is previewed. Clearing the selection, or
+      // selecting folders only, keeps the current preview.
+      const files = entries.filter((e) => e.kind === "file").map((e) => driveItem(e.path)).filter(Boolean);
+      if (files.length > 1) showSelectedFiles(files);
+      else if (files.length === 1) selectItem(files[0]);
       updateFolderActions();
     },
     onFileOpen: (file) => selectItem(driveItem(file.path)),
@@ -571,6 +576,12 @@ function selectItem(item) {
   if (!item || state.selectedId === item.id) return;
   state.selectedId = item.id;
   viewer.open(item);
+}
+
+// Lists the names of the files selected together in the preview pane.
+function showSelectedFiles(items) {
+  state.selectedId = null;
+  viewer.showSelection(items);
 }
 
 // Lists the drive's root afresh, leaving any search.

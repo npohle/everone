@@ -93,3 +93,13 @@ change since is marked with an `EverOne patch` comment:
 * **Date-only timestamps** (`"2021-03-04"`) are shown as just the day, in
   UTC, instead of a time in the local zone that can shift the day.
 * A folder given with `hasChildren: false` and no children shows "0 items".
+* **Multi-selection in the list view.** The tree already toggles rows on
+  Ctrl/⌘-click and selects ranges on Shift-click; upstream only the first
+  selected row was reported, and moving focus with such a click collapsed
+  the selection to the focused row. A folder added to the selection that
+  way now brings everything inside it along, recursively (loading lazy
+  subfolders, and selecting what loads later), and a row taken out takes
+  its contents and the folders above it out too. `onSelectionChange`
+  gets all selected entries as a second argument (in the tree's order;
+  the first argument is null unless exactly one is selected), and the
+  footer counts them.

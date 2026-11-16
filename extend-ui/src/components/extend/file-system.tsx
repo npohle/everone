@@ -210,7 +210,15 @@ export type FileSystemProps = {
   view?: FileSystemView
   /** Folder prefix to open initially, e.g. `"invoices/"`. */
   defaultPath?: string
-  onSelectionChange?: (item: FileSystemItem | null) => void
+  /**
+   * EverOne patch: `items` are all the selected entries, in the list view's
+   * order (Ctrl/⌘-click and Shift-click select several there); `item` is
+   * the selected entry when there's exactly one, else null.
+   */
+  onSelectionChange?: (
+    item: FileSystemItem | null,
+    items: FileSystemItem[]
+  ) => void
   /**
    * Called on file open (double-click), replacing the built-in behavior. By
    * default PDF, DOCX, PPTX, XLSX, and image files open in a viewer dialog and
@@ -1431,16 +1439,25 @@ export function FileSystem({
   // The ref mirrors the state so re-selecting the same entry (e.g. the
   // pointerdown + click pair the columns view emits per press) stays a
   // no-op without widening the callback's dependencies.
-  const selectedPathRef = React.useRef<string | null>(null)
-  const selectEntry = React.useCallback(
-    (entry: FileSystemEntry | null) => {
-      const path = entry?.path ?? null
-      if (selectedPathRef.current === path) return
-      selectedPathRef.current = path
-      setSelectedPath(path)
-      onSelectionChange?.(entry)
+  // EverOne patch: the list view selects several entries at once; then
+  // there's no single selected path, just their count.
+  const selectionKeyRef = React.useRef("")
+  const [selectedCount, setSelectedCount] = React.useState(0)
+  const selectEntries = React.useCallback(
+    (entries: FileSystemEntry[]) => {
+      const key = entries.map((entry) => entry.path).join("\n")
+      if (selectionKeyRef.current === key) return
+      selectionKeyRef.current = key
+      const entry = entries.length === 1 ? entries[0] : null
+      setSelectedPath(entry?.path ?? null)
+      setSelectedCount(entries.length)
+      onSelectionChange?.(entry, entries)
     },
     [onSelectionChange]
+  )
+  const selectEntry = React.useCallback(
+    (entry: FileSystemEntry | null) => selectEntries(entry ? [entry] : []),
+    [selectEntries]
   )
   // A query or filter change can hide the selected entry out from under the
   // views.
@@ -1966,6 +1983,7 @@ export function FileSystem({
     loadingFolders,
     onOpen: openEntry,
     onSelect: selectAndPrefetchEntry,
+    onSelectEntries: selectEntries,
     onSortColumnClick: toggleSortColumn,
     pageUrlCache,
     poolStagePath,
@@ -2164,7 +2182,11 @@ export function FileSystem({
               ? "item"
               : "items"}
         </span>
-        {selectedEntry ? <span>· “{selectedEntry.name}” selected</span> : null}
+        {selectedEntry ? (
+          <span>· “{selectedEntry.name}” selected</span>
+        ) : selectedCount > 1 ? (
+          <span>· {selectedCount} items selected</span>
+        ) : null}
       </div>
       <Dialog
         open={openedFile !== null}
@@ -3109,6 +3131,8 @@ type FileSystemViewProps = {
   loadingFolders: Set<string>
   onOpen: (entry: FileSystemEntry) => void
   onSelect: (entry: FileSystemEntry | null) => void
+  /** EverOne patch: the list view's selection of several entries. */
+  onSelectEntries: (entries: FileSystemEntry[]) => void
   onSortColumnClick: (key: FileSystemSortKey) => void
   /** Pooled paths currently attached to the DOM (reveal instantly). */
   attachedStagePaths: string[]
@@ -3588,6 +3612,7 @@ function FileSystemListView({
   loadingFolders,
   onOpen,
   onSelect,
+  onSelectEntries,
   onSortColumnClick,
   searchQuery,
   selectedPath,
@@ -3681,6 +3706,7 @@ function FileSystemListView({
         }
         onOpen={onOpen}
         onSelect={onSelect}
+        onSelectEntries={onSelectEntries}
         relativePaths={relativePaths}
         searchQuery={searchQuery}
         sort={sort}
@@ -3707,6 +3733,7 @@ function FileSystemPierreTree({
   loadingFolders,
   onOpen,
   onSelect,
+  onSelectEntries,
   relativePaths,
   searchQuery,
   sort,
@@ -3722,6 +3749,7 @@ function FileSystemPierreTree({
   loadingFolders: Set<string>
   onOpen: (entry: FileSystemEntry) => void
   onSelect: (entry: FileSystemEntry | null) => void
+  onSelectEntries: (entries: FileSystemEntry[]) => void
   relativePaths: string[]
   searchQuery: string
   sort: FileSystemSortState
@@ -3842,10 +3870,29 @@ function FileSystemPierreTree({
   // EverOne patch: the tree reads its options once, when it's created; the
   // callbacks below read these refs, so rows loaded later (lazy folders)
   // still get their columns and resolve to entries when selected.
-  const latestRef = React.useRef({ dateColumn, index, onSelect })
-  React.useLayoutEffect(() => {
-    latestRef.current = { dateColumn, index, onSelect }
+  const latestRef = React.useRef({
+    dateColumn,
+    ensureChildren,
+    index,
+    onSelect,
+    onSelectEntries,
+    relativePaths,
   })
+  React.useLayoutEffect(() => {
+    latestRef.current = {
+      dateColumn,
+      ensureChildren,
+      index,
+      onSelect,
+      onSelectEntries,
+      relativePaths,
+    }
+  })
+  // EverOne patch: see the multi-selection below; the tree reads its
+  // options only once.
+  const selectionChangeRef = React.useRef<
+    ((selectedPaths: readonly string[]) => void) | null
+  >(null)
   const { model } = useFileTree({
     flattenEmptyDirectories: false,
     icons,
@@ -3932,19 +3979,174 @@ function FileSystemPierreTree({
       }
     `,
     onSelectionChange: (selectedPaths) => {
-      const { index, onSelect } = latestRef.current
-      const relativePath = selectedPaths[0]
-      if (!relativePath) {
-        onSelect(null)
-        return
-      }
-      const absolutePath = `${currentPath}${relativePath}`
-      const entry =
-        index.files.get(absolutePath) ??
-        index.folders.get(normalizeFolderPath(absolutePath)) ??
-        null
-      onSelect(entry)
+      selectionChangeRef.current?.(selectedPaths)
     },
+  })
+  // EverOne patch: multi-selection. The tree itself adds a row to its
+  // selection, or takes it out, on Ctrl/⌘-click (and Ctrl/⌘-Space), and
+  // selects ranges on Shift-click (and Shift-arrows). A folder added that
+  // way brings everything inside it along, down to its deepest subfolders,
+  // loading what isn't yet (and selecting what loads later on); a row taken
+  // out takes what's inside it along, and the folders above it it was
+  // selected with, as they aren't wholly selected any more. A plain click
+  // still selects just the row clicked, a folder on its own.
+  //
+  // Whether the selection changes by such an additive gesture: set as the
+  // click or key press starts (in the capture phase, before the tree's own
+  // handlers in its shadow root), cleared once it's been handled.
+  const additiveGestureRef = React.useRef(false)
+  const markGesture = (additive: boolean) => {
+    additiveGestureRef.current = additive
+    window.setTimeout(() => {
+      additiveGestureRef.current = false
+    })
+  }
+  // The folders selected with everything inside them (model paths, with a
+  // trailing slash), the model's selection as last handled, and whether
+  // the selection is being changed here (so the changes aren't handled as
+  // the user's).
+  const recursiveFoldersRef = React.useRef(new Set<string>())
+  const selectedPathsRef = React.useRef<ReadonlySet<string>>(new Set())
+  const suppressSelectionRef = React.useRef(false)
+  React.useLayoutEffect(() => {
+    selectedPathsRef.current = new Set(model.getSelectedPaths())
+  }, [model])
+  const folderKey = (path: string) => (path.endsWith("/") ? path : `${path}/`)
+  const isFolderPath = (path: string) =>
+    latestRef.current.index.folders.has(
+      normalizeFolderPath(`${currentPath}${path}`)
+    )
+  const treeItem = (path: string) =>
+    model.getItem(path) ??
+    model.getItem(path.endsWith("/") ? path.slice(0, -1) : `${path}/`)
+  // The rows inside a folder, at any depth (as far as they're loaded), the
+  // placeholders of lazy folders aside.
+  const rowsWithin = (folder: string) =>
+    latestRef.current.relativePaths.filter(
+      (path) =>
+        path !== folder &&
+        path.startsWith(folder) &&
+        !path.endsWith(`/${TREE_LOADING_ROW}`)
+    )
+  const changeSelection = (change: () => void) => {
+    suppressSelectionRef.current = true
+    try {
+      change()
+    } finally {
+      suppressSelectionRef.current = false
+    }
+  }
+  // Selects what's inside the recursively selected folders, and loads the
+  // children of the lazy folders among them.
+  const selectWithinRecursiveFolders = () => {
+    const { ensureChildren, relativePaths } = latestRef.current
+    const recursive = recursiveFoldersRef.current
+    for (const folder of [...recursive]) {
+      if (!treeItem(folder)?.isSelected()) {
+        recursive.delete(folder)
+        continue
+      }
+      const rows = rowsWithin(folder)
+      for (const path of rows) {
+        const item = treeItem(path)
+        if (item && !item.isSelected()) item.select()
+      }
+      for (const path of [folder, ...rows]) {
+        if (relativePaths.includes(`${folderKey(path)}${TREE_LOADING_ROW}`)) {
+          ensureChildren(`${currentPath}${folderKey(path)}`)
+        }
+      }
+    }
+  }
+  // A row taken out of the selection takes what's inside it along, and the
+  // folders above it it was selected with.
+  const deselectWithin = (path: string) => {
+    const isFolder = isFolderPath(path)
+    const key = isFolder ? folderKey(path) : path
+    if (isFolder) {
+      for (const row of rowsWithin(key)) treeItem(row)?.deselect()
+    }
+    const recursive = recursiveFoldersRef.current
+    for (const folder of [...recursive]) {
+      if (isFolder && folder.startsWith(key)) {
+        recursive.delete(folder)
+      } else if (key.startsWith(folder)) {
+        recursive.delete(folder)
+        for (let i = key.indexOf("/", folder.length - 1); i !== -1 && i < key.length - 1; i = key.indexOf("/", i + 1)) {
+          treeItem(key.slice(0, i + 1))?.deselect()
+        }
+        // What's still selected inside it still is wholly.
+        for (const row of rowsWithin(folder)) {
+          if (isFolderPath(row) && treeItem(row)?.isSelected()) {
+            recursive.add(folderKey(row))
+          }
+        }
+      }
+    }
+  }
+  // Hands the selection to the component: the single entry selected (or
+  // null), or all the entries selected, in the tree's order (folders first,
+  // per level).
+  const reportSelection = () => {
+    const { index, onSelect, onSelectEntries } = latestRef.current
+    selectedPathsRef.current = new Set(model.getSelectedPaths())
+    const selected = new Set<string>()
+    for (const path of selectedPathsRef.current) {
+      const absolutePath = `${currentPath}${path}`
+      if (index.files.has(absolutePath)) selected.add(absolutePath)
+      else if (index.folders.has(normalizeFolderPath(absolutePath))) {
+        selected.add(normalizeFolderPath(absolutePath))
+      }
+    }
+    if (selected.size <= 1) {
+      const [path] = selected
+      onSelect(
+        path === undefined
+          ? null
+          : (index.files.get(path) ?? index.folders.get(path) ?? null)
+      )
+      return
+    }
+    const entries: FileSystemEntry[] = []
+    const walk = (folderPath: string) => {
+      const children = index.children.get(folderPath) ?? []
+      for (const child of children) {
+        if (child.kind !== "folder") continue
+        if (selected.has(child.path)) entries.push(child)
+        walk(child.path)
+      }
+      for (const child of children) {
+        if (child.kind === "file" && selected.has(child.path)) {
+          entries.push(child)
+        }
+      }
+    }
+    walk(currentPath)
+    onSelectEntries(entries)
+  }
+  React.useLayoutEffect(() => {
+    selectionChangeRef.current = (selectedPaths) => {
+      if (suppressSelectionRef.current) return
+      const recursive = recursiveFoldersRef.current
+      if (!additiveGestureRef.current) {
+        recursive.clear()
+      } else {
+        const previous = selectedPathsRef.current
+        const next = new Set(selectedPaths)
+        changeSelection(() => {
+          for (const path of previous) {
+            if (!next.has(path)) deselectWithin(path)
+          }
+          for (const path of selectedPaths) {
+            if (!previous.has(path) && isFolderPath(path)) {
+              recursive.add(folderKey(path))
+            }
+          }
+          selectWithinRecursiveFolders()
+        })
+      }
+      reportSelection()
+    }
   })
   // Thumbnails can resolve after mount (e.g. generated client-side); push
   // sprite updates into the existing model instead of remounting the tree.
@@ -4048,6 +4250,14 @@ function FileSystemPierreTree({
     })
     if (searchValue) model.setSearch(searchValue)
   }, [collectExpandedDirectories, hasActiveFilters, model, preparedInput])
+  // EverOne patch: rows loaded inside recursively selected folders (see
+  // the multi-selection above) join the selection.
+  React.useEffect(() => {
+    if (recursiveFoldersRef.current.size === 0) return
+    changeSelection(selectWithinRecursiveFolders)
+    reportSelection()
+    // The helpers read the latest paths through latestRef.
+  }, [model, relativePaths])
   // View switches and navigation unmount the tree; remember which folders
   // were left expanded and reopen them on the next mount of this folder
   // (before paint, so the restored disclosure never flashes closed). While
@@ -4084,13 +4294,15 @@ function FileSystemPierreTree({
   // The tree's arrow keys move focus and only select on click/Enter; mirror
   // focus into the (single) selection so arrowing selects like Finder. Shift
   // ranges keep the focused row selected, so they pass through untouched.
+  // EverOne patch: so do Ctrl/⌘-clicks, which focus the row they take out
+  // of the selection.
   React.useEffect(() => {
     let lastFocusedPath = model.getFocusedPath()
     return model.subscribe(() => {
       const focusedPath = model.getFocusedPath()
       if (focusedPath === lastFocusedPath) return
       lastFocusedPath = focusedPath
-      if (!focusedPath) return
+      if (!focusedPath || additiveGestureRef.current) return
       const item = model.getItem(focusedPath)
       if (!item || item.isSelected()) return
       for (const path of model.getSelectedPaths()) {
@@ -4114,20 +4326,28 @@ function FileSystemPierreTree({
         if (!path.startsWith(currentPath)) return
         expandDirectories(directoriesUpTo(path.slice(currentPath.length)))
       },
+      // EverOne patch: the component reports the new selection itself.
       select: (entry) => {
-        for (const selectedPath of model.getSelectedPaths()) {
-          model.getItem(selectedPath)?.deselect()
+        recursiveFoldersRef.current.clear()
+        suppressSelectionRef.current = true
+        try {
+          for (const selectedPath of model.getSelectedPaths()) {
+            model.getItem(selectedPath)?.deselect()
+          }
+          if (!entry || !entry.path.startsWith(currentPath)) return
+          const relativePath = entry.path.slice(currentPath.length)
+          expandDirectories(directoriesUpTo(pathParent(relativePath)))
+          const item =
+            model.getItem(relativePath) ??
+            model.getItem(relativePath.replace(/\/$/, ""))
+          if (!item) return
+          item.select()
+          item.focus()
+          model.scrollToPath(item.getPath())
+        } finally {
+          suppressSelectionRef.current = false
+          selectedPathsRef.current = new Set(model.getSelectedPaths())
         }
-        if (!entry || !entry.path.startsWith(currentPath)) return
-        const relativePath = entry.path.slice(currentPath.length)
-        expandDirectories(directoriesUpTo(pathParent(relativePath)))
-        const item =
-          model.getItem(relativePath) ??
-          model.getItem(relativePath.replace(/\/$/, ""))
-        if (!item) return
-        item.select()
-        item.focus()
-        model.scrollToPath(item.getPath())
       },
     }
     treeModelRef.current = handle
@@ -4188,6 +4408,21 @@ function FileSystemPierreTree({
     <PierreFileTree
       model={model}
       className="block min-h-0 flex-1"
+      // EverOne patch: see the multi-selection above. A row takes focus as
+      // the mouse goes down, before the click selects it. Ctrl/⌘-A selects
+      // the rows shown, without what's inside their folders.
+      onMouseDownCapture={(event) =>
+        markGesture(event.ctrlKey || event.metaKey || event.shiftKey)
+      }
+      onClickCapture={(event) =>
+        markGesture(event.ctrlKey || event.metaKey || event.shiftKey)
+      }
+      onKeyDownCapture={(event) =>
+        markGesture(
+          (event.ctrlKey || event.metaKey || event.shiftKey) &&
+            event.key.toLowerCase() !== "a"
+        )
+      }
       // Finder semantics: double-clicking a folder navigates into it and
       // double-clicking a file opens it; a single click still only toggles
       // the folder's disclosure.
