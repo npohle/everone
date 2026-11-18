@@ -177,6 +177,9 @@ function renderListing(remount = true) {
     emptyLabel: state.searchQuery ? "No matching files." : "This folder is empty.",
     defaultView: "list",
     dateColumn: "createdAt",
+    // Always the newest first, by the date in the names (see
+    // file-system-items.js): no sort select, no sorting column headers.
+    sort: { key: "createdAt", direction: "desc" },
     // "Select…" after the folder actions: Selection Mode, where every click
     // (or tap, on a phone without a Ctrl key) works like a Ctrl-click.
     selectionModeAction: true,

@@ -77,11 +77,18 @@ change since is marked with an `EverOne patch` comment:
   (`"folderPlus"`, `"folderMinus"`, `"upload"`, `"listChecks"`,
   `"scissors"` or `"clipboardPaste"`), `disabled`, `iconOnly`
   (just the icon while they're buttons), `pressed` (a toggle's state) and
-  `onSelect`. They're styled like the sort select's trigger. Below 616px of width they collapse into a
+  `onSelect`. They're styled like the sort select's trigger (extend-ui's
+  `SelectTrigger`). Below 616px of width they collapse into a
   "Tools" menu, and below iPad width they take the inline search's room (it
   collapses into its popover, as below 560px).
 * **`dateColumn`** — `"createdAt"` makes the list view's date column "Date
   Created" (sorting by it); default `"updatedAt"` ("Date Modified").
+* **`sort`** (`FileSystemSortState`, e.g. `{ key: "createdAt", direction:
+  "desc" }`) — a fixed sort: the header has no sort select then, and the
+  list view's column headers are plain labels that don't sort (the one
+  sorted by still shows its direction, and carries `data-sort-column` /
+  `data-sort-direction`). EverOne always sorts by Date Created, newest
+  first.
 * **`emptyLabel`** — the empty-folder message.
 * **`onSearchChange`** / **`searchResults`** — with `onSearchChange`, the
   toolbar search hands its value to the host on every change instead of

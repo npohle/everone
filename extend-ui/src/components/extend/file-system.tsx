@@ -248,6 +248,12 @@ export type FileSystemProps = {
    * Modified, the default) or `"createdAt"` (Date Created).
    */
   dateColumn?: FileSystemDateColumn
+  /**
+   * EverOne patch: a fixed sort, e.g. `{ key: "createdAt", direction:
+   * "desc" }`. The header then has no sort select and the list view's
+   * column headers don't sort; by default the user picks the sort.
+   */
+  sort?: FileSystemSortState
   /** EverOne patch: shown when the folder has no items. */
   emptyLabel?: string
   /**
@@ -613,7 +619,7 @@ export type FileSystemSortKey =
   | "name"
   | "size"
   | "updatedAt"
-type FileSystemSortState = {
+export type FileSystemSortState = {
   direction: "asc" | "desc"
   key: FileSystemSortKey
 }
@@ -1334,6 +1340,7 @@ export function FileSystem({
   onFileOpen,
   onFolderOpen,
   dateColumn = "updatedAt",
+  sort: fixedSort,
   actions,
   selectionModeAction = false,
   cutPaths,
@@ -1389,7 +1396,9 @@ export function FileSystem({
     },
     [onSearchChange]
   )
-  const [sort, setSort] = React.useState(DEFAULT_SORT)
+  const [chosenSort, setSort] = React.useState(DEFAULT_SORT)
+  // EverOne patch: see FileSystemProps.sort.
+  const sort = fixedSort ?? chosenSort
   const [filters, setFilters] = React.useState<FileSystemFilter[]>([])
   const hasActiveFilters = filters.length > 0
   // Files must pass every active filter; folders stay visible through
@@ -2036,7 +2045,7 @@ export function FileSystem({
     onOpen: openEntry,
     onSelect: selectAndPrefetchEntry,
     onSelectEntries: selectEntries,
-    onSortColumnClick: toggleSortColumn,
+    onSortColumnClick: fixedSort ? undefined : toggleSortColumn,
     pageUrlCache,
     selectionMode,
     poolStagePath,
@@ -2101,7 +2110,8 @@ export function FileSystem({
       <FileSystemIconSpriteSheet />
       {/* EverOne patch: the header has no Back / Forward buttons, folder
           title or view switcher, only the host's actions at the left and
-          sort, filter and search at the right. */}
+          sort, filter and search at the right (no sort with a fixed
+          one, see FileSystemProps.sort). */}
       <div
         data-slot="file-system-header"
         className="flex h-12 shrink-0 items-center justify-between gap-2 border-b bg-muted/40 px-2"
@@ -2113,12 +2123,14 @@ export function FileSystem({
           />
         ) : null}
         <div className="ml-auto flex min-w-0 items-center justify-end gap-1">
-          <FileSystemSortSelect
-            layout={headerLayout}
-            onKeyChange={applySortKey}
-            showLabel={!isBelowIpadWidth}
-            sort={sort}
-          />
+          {fixedSort ? null : (
+            <FileSystemSortSelect
+              layout={headerLayout}
+              onKeyChange={applySortKey}
+              showLabel={!isBelowIpadWidth}
+              sort={sort}
+            />
+          )}
           <FileSystemFilterMenu
             fileTypeOptions={fileTypeOptions}
             filters={filters}
@@ -3202,7 +3214,8 @@ type FileSystemViewProps = {
   onSelect: (entry: FileSystemEntry | null) => void
   /** EverOne patch: the list view's selection of several entries. */
   onSelectEntries: (entries: FileSystemEntry[]) => void
-  onSortColumnClick: (key: FileSystemSortKey) => void
+  /** EverOne patch: none with a fixed sort (see FileSystemProps.sort). */
+  onSortColumnClick?: (key: FileSystemSortKey) => void
   /**
    * EverOne patch: whether the list view is in Selection Mode (see
    * FileSystemProps.selectionModeAction).
@@ -3640,6 +3653,8 @@ function FileSystemIconsView({
 }
 // One sortable column header for the list view; the active column shows the
 // direction chevron on its right.
+// EverOne patch: without onClick (a fixed sort) it's a plain label, and the
+// active column carries data-sort-column / data-sort-direction.
 function FileSystemListColumnHeader({
   className,
   label,
@@ -3649,21 +3664,13 @@ function FileSystemListColumnHeader({
 }: {
   className?: string
   label: string
-  onClick: (key: FileSystemSortKey) => void
+  onClick?: (key: FileSystemSortKey) => void
   sort: FileSystemSortState
   sortKey: FileSystemSortKey
 }) {
   const isActive = sort.key === sortKey
-  return (
-    <button
-      type="button"
-      onClick={() => onClick(sortKey)}
-      className={cn(
-        "flex items-center gap-0.5 rounded-sm py-0.5 transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-        isActive && "text-foreground",
-        className
-      )}
-    >
+  const content = (
+    <>
       {label}
       {isActive ? (
         sort.direction === "asc" ? (
@@ -3672,6 +3679,37 @@ function FileSystemListColumnHeader({
           <ArrowDown01Glyph className="size-3 shrink-0" />
         )
       ) : null}
+    </>
+  )
+  const sortAttributes = isActive
+    ? { "data-sort-column": sortKey, "data-sort-direction": sort.direction }
+    : {}
+  if (!onClick) {
+    return (
+      <span
+        {...sortAttributes}
+        className={cn(
+          "flex items-center gap-0.5 py-0.5",
+          isActive && "text-foreground",
+          className
+        )}
+      >
+        {content}
+      </span>
+    )
+  }
+  return (
+    <button
+      type="button"
+      {...sortAttributes}
+      onClick={() => onClick(sortKey)}
+      className={cn(
+        "flex items-center gap-0.5 rounded-sm py-0.5 transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+        isActive && "text-foreground",
+        className
+      )}
+    >
+      {content}
     </button>
   )
 }
@@ -4344,8 +4382,19 @@ function FileSystemPierreTree({
       initialExpandedPaths: expandedPaths,
       preparedInput,
     })
+    // EverOne patch: the reset looks the expanded folders up as if siblings
+    // were in name order, so with another sort it misses the ones after a
+    // sibling that sorts later by name (they'd close whenever the paths
+    // change, e.g. when a folder's children load); open those here.
+    expandDirectories(expandedPaths)
     if (searchValue) model.setSearch(searchValue)
-  }, [collectExpandedDirectories, hasActiveFilters, model, preparedInput])
+  }, [
+    collectExpandedDirectories,
+    expandDirectories,
+    hasActiveFilters,
+    model,
+    preparedInput,
+  ])
   // EverOne patch: Selection Mode (see FileSystemProps.selectionModeAction)
   // makes every click an additive gesture (see the tree's capture handlers
   // below). Ending it leaves the row the user selected last, if it still is

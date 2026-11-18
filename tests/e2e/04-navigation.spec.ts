@@ -48,8 +48,9 @@ test("NAV-001: no Up button, and no navigation, view switcher or title in the li
   await expect(page.locator("#up-btn")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /\bUp\b/ })).toHaveCount(0);
 
-  // The listing's header keeps sort, filter and search only.
-  await expect(listing.getByRole("combobox", { name: "Sort by" })).toBeVisible();
+  // The listing's header keeps filter and search only (the listing is
+  // always sorted by Date Created, see LISTING-004).
+  await expect(listing.getByRole("combobox", { name: "Sort by" })).toHaveCount(0);
   await expect(listing.getByRole("button", { name: "Filter" })).toBeVisible();
   for (const name of ["Back", "Forward"]) {
     await expect(listing.getByRole("button", { name, exact: true })).toHaveCount(0);
@@ -125,16 +126,16 @@ test("NAV-003: New Folder, Delete Folder and Upload are in the listing's header,
   for (const id of ["#new-folder-btn", "#delete-folder-btn", "#upload-btn"]) {
     await expect(page.locator(id)).toHaveCount(0);
   }
-  // At desktop width they're buttons of their own, left of sort, filter and
+  // At desktop width they're buttons of their own, left of filter and
   // search; the Tools menu is only for narrow listings.
-  const sortBox = (await listing.getByRole("combobox", { name: "Sort by" }).boundingBox())!;
+  const filterBox = (await listing.getByRole("button", { name: "Filter" }).boundingBox())!;
   for (const name of names) {
     const button = listing.getByRole("button", { name, exact: true });
     await expect(button).toBeVisible();
     await expect(button).toBeInViewport({ ratio: 1 });
     const box = (await button.boundingBox())!;
-    expect(box.x + box.width).toBeLessThanOrEqual(sortBox.x);
-    expect(Math.abs(box.y + box.height / 2 - (sortBox.y + sortBox.height / 2))).toBeLessThanOrEqual(1);
+    expect(box.x + box.width).toBeLessThanOrEqual(filterBox.x);
+    expect(Math.abs(box.y + box.height / 2 - (filterBox.y + filterBox.height / 2))).toBeLessThanOrEqual(1);
   }
   await expect(listing.getByRole("button", { name: "Tools" })).toHaveCount(0);
   await page.screenshot({ path: `${artefactsDir}/04-20-listing-actions.png` });

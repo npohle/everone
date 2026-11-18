@@ -78,7 +78,7 @@ test("LISTING-001: the folder is listed in the File System's list view, names sp
     const listing = page.locator("#listing");
     await expect(listing.locator('[data-slot="file-system"]')).toBeVisible();
     for (const column of ["Name", "Date Created", "Size"]) {
-      await expect(listing.getByRole("button", { name: column, exact: true })).toBeVisible();
+      await expect(listing.getByText(column, { exact: true })).toBeVisible();
     }
 
     // Folders are rows too.
@@ -86,15 +86,16 @@ test("LISTING-001: the folder is listed in the File System's list view, names sp
     await expect(await rowsInFolder(page, folderName)).toHaveCount(4);
 
     // "YYYY-MM-DD_" goes to the Date Created column, the name is cut at the
-    // next underscore; both "Rechnung"s are listed, each with its own date.
+    // next underscore; both "Rechnung"s are listed, each with its own date,
+    // the newer first.
     const rechnungen = listing.getByRole("treeitem", { name: /^Rechnung​*$/ });
     await expect(rechnungen).toHaveCount(2);
-    await expect(rowDate(rechnungen.nth(0))).toHaveAttribute("title", "Mar 4, 2021");
-    await expect(rowDate(rechnungen.nth(1))).toHaveAttribute("title", "May 6, 2021");
+    await expect(rowDate(rechnungen.nth(0))).toHaveAttribute("title", "May 6, 2021");
+    await expect(rowDate(rechnungen.nth(1))).toHaveAttribute("title", "Mar 4, 2021");
     await expect(rowDate(listingRow(page, "notes.txt"))).toHaveAttribute("title", "—");
 
     // Selecting a row previews the file under its full name.
-    await rechnungen.nth(1).click();
+    await rechnungen.nth(0).click();
     await expect(page.locator("#viewer-title")).toHaveText("2021-05-06_Rechnung_Vodafone.txt");
     await expect(page.locator("#viewer-body")).toContainText("content of 2021-05-06_Rechnung_Vodafone.txt");
     await page.screenshot({ path: `${artefactsDir}/11-01-preview.png` });
@@ -193,6 +194,82 @@ test("LISTING-003: all of a folder's items are listed, across every page", async
     await page.screenshot({ path: `${artefactsDir}/11-20-all-pages.png` });
   } finally {
     await page.unrouteAll();
+    await removeFromDocuments(page, folderName);
+  }
+});
+
+// The names of the rows directly inside the folder named `name`, in the
+// listing's order.
+async function rowNamesInFolder(page: Page, name: string) {
+  const level = Number(await listingRow(page, name).getAttribute("aria-level")) + 1;
+  const rows = (await rowsInFolder(page, name)).and(page.locator(`[aria-level="${level}"]`));
+  return rows.evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
+}
+
+test("LISTING-004: the listing is sorted by the date in the names, newest first, and nothing else", async ({ page }) => {
+  const artefactsDir = process.env.ARTEFACTS_DIR;
+  const folderName = randomFolderName();
+
+  await openDocuments(page);
+  try {
+    // Created in neither name nor date order, so neither the order of
+    // their names nor that of their modification dates is the one by the
+    // dates in their names.
+    await createInDocuments(page, folderName, [
+      "2020-06-01_Bank_x.txt",
+      "notes.txt",
+      "2023-01-15_Arzt_y.txt",
+      "2019-12-31_Chor_z.txt",
+      "Archiv/2018-01-01_Alt.txt",
+      "Archiv/2022-02-02_Neu.txt",
+      "2024-05-05_Ordner/inside.txt",
+    ]);
+    await page.reload();
+    await expect(page.getByText("Loading")).not.toBeVisible();
+    await selectFolder(page, "Documents");
+    await selectFolder(page, folderName);
+    await page.screenshot({ path: `${artefactsDir}/11-30-sorted.png` });
+
+    // There's no sort select in the header, and the column headers don't
+    // sort; Date Created is marked as the column sorted by, descending.
+    const listing = page.locator("#listing");
+    await expect(listing.getByRole("combobox", { name: "Sort by" })).toHaveCount(0);
+    for (const column of ["Name", "Date Created", "Size"]) {
+      await expect(listing.getByText(column, { exact: true })).toBeVisible();
+      await expect(listing.getByRole("button", { name: column, exact: true })).toHaveCount(0);
+    }
+    await expect(listing.locator('[data-sort-column="createdAt"]')).toHaveAttribute("data-sort-direction", "desc");
+
+    // Folders first, as ever; within them and the files the newest date
+    // first, names without one last.
+    await expect.poll(() => rowNamesInFolder(page, folderName)).toEqual([
+      "Ordner",
+      "Archiv",
+      "Arzt",
+      "Bank",
+      "Chor",
+      "notes.txt",
+    ]);
+
+    // Clicking a column header changes nothing.
+    await listing.getByText("Name", { exact: true }).click();
+    await listing.getByText("Size", { exact: true }).click();
+    await expect.poll(() => rowNamesInFolder(page, folderName)).toEqual([
+      "Ordner",
+      "Archiv",
+      "Arzt",
+      "Bank",
+      "Chor",
+      "notes.txt",
+    ]);
+
+    // Subfolders are sorted the same way once they're loaded, and stay open
+    // (Archiv comes after Ordner here, unlike by name).
+    await selectFolder(page, "Archiv");
+    await expect.poll(() => rowNamesInFolder(page, "Archiv")).toEqual(["Neu.txt", "Alt.txt"]);
+    await expect(listingRow(page, "Archiv")).toHaveAttribute("aria-expanded", "true");
+    await page.screenshot({ path: `${artefactsDir}/11-31-sorted-subfolder.png` });
+  } finally {
     await removeFromDocuments(page, folderName);
   }
 });

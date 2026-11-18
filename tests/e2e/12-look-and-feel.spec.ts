@@ -7,6 +7,7 @@ import {
   DIALOG_TITLE_CLASS,
   INPUT_CLASS,
   INPUT_PROPS,
+  SELECT_TRIGGER_CLASS,
   TITLE_PROPS,
   buttonClass,
   differencesFromExtendUi,
@@ -169,12 +170,14 @@ for (const scheme of SCHEMES) {
     await page.screenshot({ path: `${artefactsDir}/12-05-upload-list-${scheme}.png` });
   });
 
-  test(`LOOK-006: the listing's folder buttons look like its sort select (${scheme})`, async ({ page }) => {
+  // The listing has no sort select of its own (it's always sorted by Date
+  // Created), so the buttons are compared with extend-ui's SelectTrigger.
+  test(`LOOK-006: the listing's folder buttons look like extend-ui's select (${scheme})`, async ({ page }) => {
     const artefactsDir = process.env.ARTEFACTS_DIR;
     await page.emulateMedia({ colorScheme: scheme });
     const listing = page.locator("#listing");
     // Documents isn't empty: New Folder and Upload are enabled, Delete
-    // Folder is disabled (and so dimmed, unlike the sort select).
+    // Folder is disabled (and so dimmed, unlike a select).
     await selectFolder(page, "Documents");
     const props = [
       "height",
@@ -189,20 +192,15 @@ for (const scheme of SCHEMES) {
       "font-weight",
       "line-height",
     ];
-    const styles = (selector: string) =>
-      listing.locator(selector).first().evaluate((el, props) => {
-        const s = getComputedStyle(el);
-        return Object.fromEntries(props.map((p) => [p, s.getPropertyValue(p)]));
-      }, props);
     // Moves the mouse away, so no hover styles apply.
     await page.mouse.move(0, 0);
     for (const action of ["new-folder", "delete-folder", "upload"]) {
       await expect
-        .poll(async () => {
-          const [button, sort] = [await styles(`button[data-action="${action}"]`), await styles('[aria-label="Sort by"]')];
-          return Object.keys(sort).filter((p) => button[p] !== sort[p]).map((p) => `${p}: ${button[p]} != ${sort[p]}`);
-        }, { message: `${action} looks like the sort select` })
-        .toEqual([]);
+        .poll(
+          () => differencesFromExtendUi(page, `#listing button[data-action="${action}"]`, "button", SELECT_TRIGGER_CLASS, props, { "data-size": "sm" }),
+          { message: `${action} looks like SelectTrigger (sm)` },
+        )
+        .toEqual({});
     }
     await expect(listing.getByRole("button", { name: "Delete Folder" })).toHaveCSS("opacity", "0.5");
     await listing.locator("[data-slot=file-system-header]").screenshot({ path: `${artefactsDir}/12-06-listing-header-${scheme}.png` });
