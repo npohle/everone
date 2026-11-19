@@ -98,14 +98,14 @@ test("CUT-PASTE-001: Cut greys out the selected documents, Paste moves them into
     const c = listingRow(page, "c.txt");
 
     // With the listing wide, they're icon buttons beside the folder actions,
-    // left of the sort select. Nothing's cut yet, so there's nothing to paste.
+    // left of the filter menu. Nothing's cut yet, so there's nothing to paste.
     await expect(listing.getByRole("button", { name: "Tools" })).toHaveCount(0);
     const uploadBox = (await listing.getByRole("button", { name: "Upload", exact: true }).boundingBox())!;
-    const sortBox = (await listing.getByRole("combobox", { name: "Sort by" }).boundingBox())!;
+    const filterBox = (await listing.getByRole("button", { name: "Filter" }).boundingBox())!;
     for (const button of [cut, paste]) {
       const box = (await button.boundingBox())!;
       expect(box.x).toBeGreaterThanOrEqual(uploadBox.x + uploadBox.width);
-      expect(box.x + box.width).toBeLessThanOrEqual(sortBox.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(filterBox.x);
     }
     await expect(paste).toBeDisabled();
 

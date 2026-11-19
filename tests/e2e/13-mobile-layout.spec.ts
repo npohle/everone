@@ -66,9 +66,9 @@ test("MOBILE-003: New Folder, Delete Folder and Upload collapse into a Tools men
 
   await openOnPhone(page);
   await expect(tools).toBeVisible();
-  // Next to sort, filter and search, all in the listing's header.
+  // Next to filter and search, all in the listing's header.
   await expect(tools).toBeInViewport({ ratio: 1 });
-  await expect(listing.getByRole("combobox", { name: "Sort by" })).toBeInViewport({ ratio: 1 });
+  await expect(listing.getByRole("button", { name: "Filter" })).toBeInViewport({ ratio: 1 });
   await expect(listing.getByRole("button", { name: "Search" })).toBeInViewport({ ratio: 1 });
   for (const name of ["New Folder", "Delete Folder", "Upload"]) {
     await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);

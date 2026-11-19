@@ -374,12 +374,12 @@ test("MULTI-SELECT-005: with the listing wide, Selection Mode is an icon toggle 
     const select = listing.getByRole("button", { name: "Select…", exact: true });
     await expect(listing.getByRole("button", { name: "Tools" })).toHaveCount(0);
     await expect(select).toHaveAttribute("aria-pressed", "false");
-    // It fits between Upload and the sort select.
+    // It fits between Upload and the filter menu.
     const selectBox = (await select.boundingBox())!;
     const uploadBox = (await listing.getByRole("button", { name: "Upload", exact: true }).boundingBox())!;
-    const sortBox = (await listing.getByRole("combobox", { name: "Sort by" }).boundingBox())!;
+    const filterBox = (await listing.getByRole("button", { name: "Filter" }).boundingBox())!;
     expect(selectBox.x).toBeGreaterThanOrEqual(uploadBox.x + uploadBox.width);
-    expect(selectBox.x + selectBox.width).toBeLessThanOrEqual(sortBox.x);
+    expect(selectBox.x + selectBox.width).toBeLessThanOrEqual(filterBox.x);
 
     const a = listingRow(page, "a.txt");
     const b = listingRow(page, "b.txt");
