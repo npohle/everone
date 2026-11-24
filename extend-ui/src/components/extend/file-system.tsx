@@ -3775,7 +3775,10 @@ function FileSystemListView({
     )
   }
   return (
-    <div className="flex size-full flex-col">
+    // EverOne patch: the fs-list container narrows the date and size
+    // columns, here and in the tree's rows, while the listing is narrower
+    // than 32rem (on a phone), so names keep some room next to them.
+    <div className="@container/fs-list flex size-full flex-col">
       {/* Paddings match the tree's row geometry: name text starts 46px in
             (16px tree padding + 30px icon lane), metadata ends 24px from the
             right (16px tree padding + 8px decoration inset). */}
@@ -3788,14 +3791,14 @@ function FileSystemListView({
           sortKey="name"
         />
         <FileSystemListColumnHeader
-          className="w-44 justify-start"
+          className="w-24 justify-start @lg/fs-list:w-44"
           label={dateColumn === "createdAt" ? "Date Created" : "Date Modified"}
           onClick={onSortColumnClick}
           sort={sort}
           sortKey={dateColumn}
         />
         <FileSystemListColumnHeader
-          className="w-20 justify-start"
+          className="w-18 justify-start @lg/fs-list:w-20"
           label="Size"
           onClick={onSortColumnClick}
           sort={sort}
@@ -4073,14 +4076,37 @@ function FileSystemPierreTree({
       button[data-type='item'][data-item-selected] [data-item-section]::before {
         color: var(--color-primary-foreground) !important;
       }
+      /* EverOne patch: the decoration keeps the date and size columns'
+         full width, however long the name; the name is cut instead. (The
+         tree's default, flex: 1 1 0, lets a long name squeeze it to 0.) */
+      button[data-type='item'] [data-item-section='decoration'] {
+        flex: 1 0 auto;
+      }
+      /* EverOne patch: a name cut short keeps its start. The tree splits it
+         in two (at the extension, else the middle) and shrinks the first
+         part first, which left just the end of an extension-less name. */
+      [data-item-section='content'] [data-truncate-group-container='middle'] {
+        & > div[data-truncate-segment-priority='1'] {
+          flex: 0 999999 max-content;
+        }
+        & > div[data-truncate-segment-priority='2'] {
+          flex: 0 1 max-content;
+        }
+      }
       [data-item-section='decoration'] > span {
         display: grid;
-        grid-template-columns: 11rem 5rem;
+        /* EverOne patch: see the fs-list container in FileSystemListView. */
+        grid-template-columns: 6rem 4.5rem;
         white-space: nowrap;
         /* The size cell is the span's anonymous text item, so alignment
            rides on text-align: the span's right applies to it while the
            date cell (::before) overrides back to left. */
         text-align: right;
+      }
+      @container fs-list (width >= 32rem) {
+        [data-item-section='decoration'] > span {
+          grid-template-columns: 11rem 5rem;
+        }
       }
       [data-item-section='decoration'] > span::before {
         content: attr(title);
