@@ -102,6 +102,13 @@ change since is marked with an `EverOne patch` comment:
 * **Date-only timestamps** (`"2021-03-04"`) are shown as just the day, in
   UTC, instead of a time in the local zone that can shift the day.
 * A folder given with `hasChildren: false` and no children shows "0 items".
+* **Long names in the list view** are cut where the date column starts:
+  upstream a name longer than its column squeezed the date and size
+  columns to nothing. A name cut short keeps its start (upstream the tree
+  shrinks a name's first part first, so an extension-less name showed just
+  its end). Below 32rem of width (a phone) the date and size columns are
+  narrower (6rem and 4.5rem instead of 11rem and 5rem), in the header and
+  the rows alike (the `fs-list` container), so names keep some room.
 * **Multi-selection in the list view.** The tree already toggles rows on
   Ctrl/⌘-click and selects ranges on Shift-click; upstream only the first
   selected row was reported, and moving focus with such a click collapsed

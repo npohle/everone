@@ -273,3 +273,67 @@ test("LISTING-004: the listing is sorted by the date in the names, newest first,
     await removeFromDocuments(page, folderName);
   }
 });
+
+// Checks that the rows named `names` end their name before the date column
+// starts, which keeps its full width (`columnsWidth`: Date Created plus
+// Size), right under its header, however long the name.
+async function expectDateColumnVisible(page: Page, names: string[], columnsWidth: number) {
+  const dateHeader = (await page.locator("#listing").getByText("Date Created", { exact: true }).boundingBox())!;
+  for (const name of names) {
+    const row = listingRow(page, name);
+    await expect(row).toBeVisible();
+    const content = (await row.locator('[data-item-section="content"]').boundingBox())!;
+    const date = (await rowDate(row).boundingBox())!;
+    expect(content.x + content.width).toBeLessThanOrEqual(date.x + 1);
+    expect(date.width).toBeGreaterThanOrEqual(columnsWidth - 1);
+    expect(Math.abs(date.x - dateHeader.x)).toBeLessThanOrEqual(2);
+  }
+}
+
+test("LISTING-005: a name too long for its column is cut, the Date Created and Size columns stay visible", async ({ page }) => {
+  const artefactsDir = process.env.ARTEFACTS_DIR;
+  const folderName = randomFolderName();
+  const longName =
+    "Jahresabrechnung der Stadtwerke für das Wohnhaus in der Musterstraße mit allen Anlagen, Belegen und Zählerständen";
+  const names = [longName, "Kurz.txt"];
+
+  await openDocuments(page);
+  try {
+    await createInDocuments(page, folderName, [`2022-07-08_${longName}_x.txt`, "2021-01-02_Kurz.txt"]);
+    await page.reload();
+    await expect(page.getByText("Loading")).not.toBeVisible();
+    await selectFolder(page, "Documents");
+    await selectFolder(page, folderName);
+    await page.screenshot({ path: `${artefactsDir}/11-40-long-name.png` });
+
+    // Date Created's 11rem plus Size's 5rem.
+    await expectDateColumnVisible(page, names, 16 * 16);
+    await expect(rowDate(listingRow(page, longName))).toHaveAttribute("title", "Jul 8, 2022");
+
+    // The long name is cut at its end, keeping its start, on one line.
+    const longContent = listingRow(page, longName).locator('[data-item-section="content"]');
+    expect((await longContent.boundingBox())!.height).toBeLessThanOrEqual(28);
+    const [start, end] = await longContent
+      .locator('[data-truncate-group-container="middle"] > div')
+      .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().width));
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBe(0);
+    await expect(longContent.locator('[data-truncate-segment-priority="2"] [data-truncate-marker]'))
+      .toHaveCSS("opacity", "1");
+
+    // Also when the row is selected.
+    await listingRow(page, longName).click();
+    await expect(listingRow(page, longName)).toHaveAttribute("aria-selected", "true");
+    await expectDateColumnVisible(page, [longName], 16 * 16);
+    await page.screenshot({ path: `${artefactsDir}/11-41-long-name-selected.png` });
+
+    // On a phone the date and size columns are narrower (6rem plus 4.5rem),
+    // so the names keep some room too.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: `${artefactsDir}/11-42-long-name-phone.png` });
+    await expectDateColumnVisible(page, names, 10.5 * 16);
+    expect((await longContent.boundingBox())!.width).toBeGreaterThanOrEqual(60);
+  } finally {
+    await removeFromDocuments(page, folderName);
+  }
+});

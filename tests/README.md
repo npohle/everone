@@ -171,7 +171,9 @@ listing is narrow, as on a phone (`13-mobile-layout.spec.ts`).
 date split, lazy loading of subfolders, listing every page of a folder
 (by rewriting Graph's `$top` to 2 with `page.route`), and the one sort
 there is, by the date in the names, newest first (no sort select, no
-sorting column headers).
+sorting column headers), and names too long for their column, which are cut
+at their end so the Date Created and Size columns stay visible, at desktop
+and phone width (`LISTING-005`).
 
 **Multi-selection in the listing** (`tests/e2e/15-multi-select.spec.ts`):
 Ctrl-click adds documents to the selection, from any folder, or takes them
